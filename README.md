@@ -4,6 +4,10 @@ Static dashboard for prioritizing requirements from project documents and backlo
 
 Generated from local source documents on 2026-06-03.
 
+## Live URL
+
+https://priisk-moscow-dashboard.netlify.app
+
 ## Contents
 
 - `index.html` - portable single-file dashboard with embedded data and interactions.
