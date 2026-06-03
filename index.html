@@ -662,12 +662,12 @@
     let suppressClick = false;
 
     function escapeHtml(value) {
-      return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
     function initialState() {
@@ -713,8 +713,17 @@
       localStorage.setItem(storageKey, JSON.stringify(state));
     }
 
+    function cloneCardWithMoscow(card) {
+      const cloned = {};
+      for (const key in card) {
+        if (Object.prototype.hasOwnProperty.call(card, key)) cloned[key] = card[key];
+      }
+      cloned.moscow = state.positions[card.id] || card.moscow;
+      return cloned;
+    }
+
     function currentCards() {
-      return data.cards.map(card => ({ ...card, moscow: state.positions[card.id] || card.moscow }));
+      return data.cards.map(cloneCardWithMoscow);
     }
 
     function filterCard(card) {
@@ -809,7 +818,7 @@
       board.innerHTML = data.columns.map(col => {
         const laneIds = state.order[col.id] || [];
         const laneCards = laneIds.map(id => cardById.get(id)).filter(Boolean)
-          .map(card => ({ ...card, moscow: state.positions[card.id] || card.moscow }))
+          .map(cloneCardWithMoscow)
           .filter(card => card.moscow === col.id && filterCard(card));
         return `
           <section class="lane" data-lane="${escapeHtml(col.id)}">
@@ -1010,7 +1019,7 @@
     }
 
     function csvEscape(value) {
-      return '"' + String(value ?? '').replaceAll('"', '""') + '"';
+      return '"' + String(value == null ? '' : value).replace(/"/g, '""') + '"';
     }
 
     function exportCsv() {
