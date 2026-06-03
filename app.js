@@ -445,7 +445,7 @@ let data = null;
     }
 
     function loadDashboardData() {
-      loadText('chunks.json?v=20260603-chunks1', function (manifestText) {
+      loadText('chunks.json?v=202606031703', function (manifestText) {
         let manifest;
         try {
           manifest = JSON.parse(manifestText);
