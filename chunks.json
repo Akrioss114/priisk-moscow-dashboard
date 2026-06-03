@@ -1,0 +1,21 @@
+{
+  "version": "20260603-chunks1",
+  "files": [
+    "data-chunks/part-001.txt",
+    "data-chunks/part-002.txt",
+    "data-chunks/part-003.txt",
+    "data-chunks/part-004.txt",
+    "data-chunks/part-005.txt",
+    "data-chunks/part-006.txt",
+    "data-chunks/part-007.txt",
+    "data-chunks/part-008.txt",
+    "data-chunks/part-009.txt",
+    "data-chunks/part-010.txt",
+    "data-chunks/part-011.txt",
+    "data-chunks/part-012.txt",
+    "data-chunks/part-013.txt",
+    "data-chunks/part-014.txt",
+    "data-chunks/part-015.txt",
+    "data-chunks/part-016.txt"
+  ]
+}
