@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MoSCoW-доска приоритизации требований</title>
-  <link rel="stylesheet" href="styles.css?v=202606031703">
+  <link rel="stylesheet" href="styles.css?v=20260629-functions1">
 </head>
 <body>
   <div class="app">
@@ -15,7 +15,7 @@
           <div class="subtle">Сводная доска по документам требований и файлу беклога. Дата сборки: <span id="generatedAt"></span>.</div>
         </div>
         <div class="actions">
-          <button id="resetBtn" title="Вернуть стартовую MoSCoW-классификацию">Сбросить</button>
+          <button id="refreshBtn" title="Обновить состояние доски">Обновить</button>
           <button id="jsonBtn" title="Скачать текущие решения в JSON">JSON</button>
           <button id="csvBtn" class="primary" title="Скачать текущие решения в CSV">CSV</button>
         </div>
@@ -33,8 +33,32 @@
         <option value="backlogOnly">Только задачи беклога</option>
       </select>
       <div class="actions">
+        <button id="archiveToggle" class="admin-only" hidden>Архив</button>
         <button id="clearFilters">Очистить фильтры</button>
       </div>
+    </section>
+
+    <section class="control-strip" aria-label="Участники и голосование">
+      <div class="control-block">
+        <label for="participantName">Участник</label>
+        <div class="inline-form">
+          <input id="participantName" class="field" type="text" maxlength="80" placeholder="Имя для голосования">
+          <button id="saveParticipant">Войти</button>
+        </div>
+      </div>
+      <div class="control-block">
+        <label for="adminPin">Админ</label>
+        <div class="inline-form">
+          <input id="adminPin" class="field" type="password" inputmode="numeric" placeholder="PIN">
+          <button id="adminLogin">Войти</button>
+          <button id="adminLogout" hidden>Выйти</button>
+        </div>
+      </div>
+      <div class="control-block vote-block">
+        <div class="control-label">Голосование</div>
+        <div id="votePanel" class="vote-panel muted-panel">Нет активного голосования</div>
+      </div>
+      <div id="statusLine" class="status-line">Подключение к общей доске...</div>
     </section>
 
     <main class="board-wrap">
@@ -71,6 +95,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=202606031703"></script>
+  <script src="app.js?v=20260629-functions1"></script>
 </body>
 </html>

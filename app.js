@@ -1,489 +1,838 @@
 let data = null;
-    let cardById = null;
-    let storageKey = '';
-    let columns = [];
-    let state = null;
-    let activeCardId = null;
-    let suppressClick = false;
+let cardById = null;
+let columns = [];
+let remoteState = null;
+let participant = null;
+let adminToken = '';
+let activeCardId = null;
+let suppressClick = false;
+let archiveMode = false;
+let pollTimer = null;
 
-    function escapeHtml(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
+const API = '/.netlify/functions';
+const PARTICIPANT_KEY = 'moscow-dashboard-participant-v1';
+const ADMIN_KEY = 'moscow-dashboard-admin-token-v1';
+const LOCAL_VOTES_KEY = 'moscow-dashboard-local-votes-v1';
+const DONE_COLUMN = {
+  id: 'done',
+  letter: 'D',
+  title: 'Done',
+  subtitle: 'Выполнено и не требует дальнейшей приоритизации.'
+};
 
-    function initialState() {
-      const order = {};
-      for (const col of columns) order[col] = [];
-      const positions = {};
-      for (const card of data.cards) {
-        const col = columns.indexOf(card.moscow) >= 0 ? card.moscow : card.suggestedMoscow;
-        positions[card.id] = col;
-        order[col].push(card.id);
-      }
-      return { positions, order };
-    }
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
-    function loadState() {
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return initialState();
-        const parsed = JSON.parse(raw);
-        const fallback = initialState();
-        for (const card of data.cards) {
-          if (!parsed.positions || columns.indexOf(parsed.positions[card.id]) < 0) {
-            parsed.positions = parsed.positions || {};
-            parsed.positions[card.id] = fallback.positions[card.id];
-          }
-        }
-        parsed.order = parsed.order || fallback.order;
-        for (const col of columns) {
-          parsed.order[col] = (parsed.order[col] || []).filter(id => cardById.has(id));
-        }
-        for (const card of data.cards) {
-          const col = parsed.positions[card.id];
-          if (parsed.order[col].indexOf(card.id) < 0) parsed.order[col].push(card.id);
-        }
-        return parsed;
-      } catch (error) {
-        return initialState();
-      }
-    }
+function byId(id) {
+  return document.getElementById(id);
+}
 
-    function saveState() {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(state));
-      } catch (error) {}
-    }
+function isAdmin() {
+  return !!adminToken;
+}
 
-    function cloneCardWithMoscow(card) {
-      const cloned = {};
-      for (const key in card) {
-        if (Object.prototype.hasOwnProperty.call(card, key)) cloned[key] = card[key];
-      }
-      cloned.moscow = state.positions[card.id] || card.moscow;
-      return cloned;
-    }
+function columnIds() {
+  return columns.map(col => col.id);
+}
 
-    function currentCards() {
-      return data.cards.map(cloneCardWithMoscow);
-    }
+function ensureDoneColumn(payload) {
+  const exists = payload.columns.some(col => col.id === DONE_COLUMN.id);
+  if (!exists) payload.columns.push(DONE_COLUMN);
+  payload.stats = payload.stats || {};
+  payload.stats.byMoscow = payload.stats.byMoscow || {};
+  if (payload.stats.byMoscow.done == null) payload.stats.byMoscow.done = 0;
+}
 
-    function filterCard(card) {
-      const query = document.getElementById('search').value.trim().toLowerCase();
-      const project = document.getElementById('projectFilter').value;
-      const backlog = document.getElementById('backlogFilter').value;
-      if (project !== 'all' && card.project !== project) return false;
-      if (backlog === 'with' && card.backlogMatches.length === 0) return false;
-      if (backlog === 'without' && card.backlogMatches.length > 0) return false;
-      if (backlog === 'backlogOnly' && card.project !== 'Беклог') return false;
-      if (!query) return true;
-      const haystack = [
-        card.requirementId,
-        card.title,
-        card.project,
-        card.sourceType,
-        card.summary,
-        card.details.join(' '),
-        card.tags.join(' '),
-        card.backlogMatches.map(match => match.title + ' ' + match.effect).join(' ')
-      ].join(' ').toLowerCase();
-      return haystack.indexOf(query) >= 0;
-    }
+function baseColumn(card) {
+  const ids = columnIds();
+  if (ids.indexOf(card.moscow) >= 0) return card.moscow;
+  if (ids.indexOf(card.suggestedMoscow) >= 0) return card.suggestedMoscow;
+  return 'should';
+}
 
-    function renderStats(cards) {
-      const visible = cards.filter(filterCard);
-      const withBacklog = visible.filter(card => card.backlogMatches.length > 0).length;
-      const backlogOnly = visible.filter(card => card.project === 'Беклог').length;
-      const mCount = visible.filter(card => card.moscow === 'must').length;
-      const items = [
-        ['Карточек', visible.length],
-        ['Есть в беклоге', withBacklog],
-        ['Только беклог', backlogOnly],
-        ['Must сейчас', mCount],
-      ];
-      document.getElementById('stats').innerHTML = items.map(([label, value]) => `
-        <div class="metric"><div class="value">${value}</div><div class="label">${escapeHtml(label)}</div></div>
-      `).join('');
-    }
+function emptyBoardState() {
+  const order = {};
+  for (const col of columnIds()) order[col] = [];
+  return { version: 0, positions: {}, order, archived: [], updatedAt: '' };
+}
 
-    function renderProjectBars(cards) {
-      const counts = new Map();
-      for (const card of cards.filter(filterCard)) {
-        counts.set(card.project, (counts.get(card.project) || 0) + 1);
-      }
-      const max = Math.max(1, ...counts.values());
-      const rows = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'));
-      document.getElementById('projectBars').innerHTML = rows.map(([project, count]) => `
-        <div class="bar-row">
-          <div>${escapeHtml(project)}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, Math.round(count / max * 100))}%"></div></div>
-          <div>${count}</div>
-        </div>
-      `).join('');
-    }
+function normalizedBoardState() {
+  const serverBoard = remoteState && remoteState.board ? remoteState.board : {};
+  const state = emptyBoardState();
+  state.version = Number(serverBoard.version || 0);
+  state.updatedAt = serverBoard.updatedAt || '';
+  state.positions = serverBoard.positions && typeof serverBoard.positions === 'object' ? serverBoard.positions : {};
+  state.archived = Array.isArray(serverBoard.archived) ? serverBoard.archived : [];
 
-    function renderSources() {
-      const sourceList = data.sourceFiles.map(src => `<div><strong>${escapeHtml(src.project)}:</strong> ${escapeHtml(src.file)}</div>`).join('');
-      document.getElementById('sources').innerHTML = `
-        ${sourceList}
-        <div><strong>MoSCoW:</strong> M/S/C/W заданы как стартовая классификация; решения встречи сохраняются в этом браузере и выгружаются через CSV/JSON.</div>
-        <div><strong>Беклог:</strong> пересечения отмечены на карточках, задачи без явного дубля добавлены отдельно как источник "Беклог".</div>
-      `;
-      document.getElementById('generatedAt').textContent = data.generatedAt;
-    }
+  for (const col of columnIds()) {
+    const serverOrder = serverBoard.order && Array.isArray(serverBoard.order[col]) ? serverBoard.order[col] : [];
+    state.order[col] = serverOrder.filter(id => cardById.has(id));
+  }
 
-    function cardHtml(card) {
-      const backlogBadge = card.backlogMatches.length ? '<span class="badge backlog">есть в беклоге</span>' : '';
-      const tags = card.tags
-        .filter(tag => tag && tag !== 'есть в беклоге')
-        .slice(0, 3)
-        .map(tag => `<span class="badge">${escapeHtml(tag)}</span>`)
-        .join('');
-      return `
-        <article class="card" draggable="false" data-card-id="${escapeHtml(card.id)}" tabindex="0">
-          <div class="card-meta">
-            <span>${escapeHtml(card.requirementId)}</span>
-            <span>${escapeHtml(card.project)}</span>
+  for (const card of data.cards) {
+    const col = state.positions[card.id] || baseColumn(card);
+    state.positions[card.id] = col;
+    if (state.order[col] && state.order[col].indexOf(card.id) < 0) state.order[col].push(card.id);
+  }
+  return state;
+}
+
+function cloneCard(card, state) {
+  const cloned = {};
+  for (const key in card) {
+    if (Object.prototype.hasOwnProperty.call(card, key)) cloned[key] = card[key];
+  }
+  cloned.moscow = state.positions[card.id] || baseColumn(card);
+  cloned.archived = state.archived.indexOf(card.id) >= 0;
+  return cloned;
+}
+
+function currentCards() {
+  const state = normalizedBoardState();
+  return data.cards.map(card => cloneCard(card, state));
+}
+
+function visibleCards() {
+  return currentCards().filter(filterCard);
+}
+
+function localVotes() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_VOTES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function rememberLocalVote(voteId, column) {
+  const votes = localVotes();
+  votes[voteId] = column;
+  localStorage.setItem(LOCAL_VOTES_KEY, JSON.stringify(votes));
+}
+
+function loadLocalIdentity() {
+  try {
+    participant = JSON.parse(localStorage.getItem(PARTICIPANT_KEY) || 'null');
+  } catch {
+    participant = null;
+  }
+  adminToken = localStorage.getItem(ADMIN_KEY) || '';
+  if (participant && participant.name) byId('participantName').value = participant.name;
+  renderAuthState();
+}
+
+function setStatus(message, type) {
+  const node = byId('statusLine');
+  node.textContent = message;
+  node.className = 'status-line' + (type ? ' ' + type : '');
+}
+
+async function api(path, options = {}) {
+  const headers = options.headers || {};
+  if (options.body && !headers['content-type']) headers['content-type'] = 'application/json';
+  if (adminToken) headers.authorization = 'Bearer ' + adminToken;
+  const response = await fetch(API + '/' + path, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = { error: text };
+  }
+  if (!response.ok) {
+    if (response.status === 401 && path !== 'admin-login') logoutAdmin(false);
+    throw new Error(payload && payload.error ? payload.error : 'HTTP ' + response.status);
+  }
+  return payload;
+}
+
+async function loadRemoteState(silent = false) {
+  try {
+    remoteState = await api('state');
+    if (!silent) setStatus('Общая доска синхронизирована.', 'ok');
+    renderAll();
+  } catch (error) {
+    if (!remoteState) remoteState = { board: emptyBoardState(), activeVote: null, voteSummary: null };
+    setStatus('Общая доска недоступна: ' + error.message, 'error');
+    renderAll();
+  }
+}
+
+function startPolling() {
+  if (pollTimer) window.clearInterval(pollTimer);
+  pollTimer = window.setInterval(() => loadRemoteState(true), 3500);
+}
+
+function renderStats(cards) {
+  const visible = cards.filter(filterCard);
+  const withBacklog = visible.filter(card => card.backlogMatches.length > 0).length;
+  const archived = currentCards().filter(card => card.archived).length;
+  const done = visible.filter(card => card.moscow === 'done').length;
+  const must = visible.filter(card => card.moscow === 'must').length;
+  const items = [
+    ['Карточек', visible.length],
+    ['Есть в беклоге', withBacklog],
+    ['Must сейчас', must],
+    ['Done', done],
+    ['Архив', archived],
+  ];
+  byId('stats').innerHTML = items.map(([label, value]) => `
+    <div class="metric"><div class="value">${value}</div><div class="label">${escapeHtml(label)}</div></div>
+  `).join('');
+}
+
+function renderProjectBars(cards) {
+  const counts = new Map();
+  for (const card of cards.filter(filterCard)) {
+    counts.set(card.project, (counts.get(card.project) || 0) + 1);
+  }
+  const max = Math.max(1, ...counts.values());
+  const rows = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'));
+  byId('projectBars').innerHTML = rows.map(([project, count]) => `
+    <div class="bar-row">
+      <div>${escapeHtml(project)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, Math.round(count / max * 100))}%"></div></div>
+      <div>${count}</div>
+    </div>
+  `).join('');
+}
+
+function renderSources() {
+  const sourceList = data.sourceFiles.map(src => `<div><strong>${escapeHtml(src.project)}:</strong> ${escapeHtml(src.file)}</div>`).join('');
+  byId('sources').innerHTML = `
+    ${sourceList}
+    <div><strong>MoSCoW:</strong> M/S/C/W/D используются как общая доска. Переносы, архив и голосования синхронизируются через Netlify Functions.</div>
+    <div><strong>Беклог:</strong> пересечения отмечены на карточках, задачи без явного дубля добавлены как отдельные карточки.</div>
+    <div><strong>Доступ без VPN:</strong> адрес остаётся на Netlify. Если сеть блокирует сам Netlify или домен netlify.app, потребуется отдельный домен или зеркало.</div>
+  `;
+  byId('generatedAt').textContent = data.generatedAt;
+}
+
+function filterCard(card) {
+  const query = byId('search').value.trim().toLowerCase();
+  const project = byId('projectFilter').value;
+  const backlog = byId('backlogFilter').value;
+  if (archiveMode) {
+    if (!card.archived) return false;
+  } else if (card.archived) {
+    return false;
+  }
+  if (project !== 'all' && card.project !== project) return false;
+  if (backlog === 'with' && card.backlogMatches.length === 0) return false;
+  if (backlog === 'without' && card.backlogMatches.length > 0) return false;
+  if (backlog === 'backlogOnly' && card.project !== 'Беклог') return false;
+  if (!query) return true;
+  const haystack = [
+    card.requirementId,
+    card.title,
+    card.project,
+    card.sourceType,
+    card.summary,
+    card.details.join(' '),
+    card.tags.join(' '),
+    card.backlogMatches.map(match => match.title + ' ' + match.effect).join(' ')
+  ].join(' ').toLowerCase();
+  return haystack.indexOf(query) >= 0;
+}
+
+function cardHtml(card) {
+  const backlogBadge = card.backlogMatches.length ? '<span class="badge backlog">есть в беклоге</span>' : '';
+  const archivedBadge = card.archived ? '<span class="badge archive">архив</span>' : '';
+  const activeVote = remoteState && remoteState.activeVote;
+  const voteBadge = activeVote && activeVote.cardId === card.id ? '<span class="badge vote">голосование</span>' : '';
+  const tags = card.tags
+    .filter(tag => tag && tag !== 'есть в беклоге')
+    .slice(0, 3)
+    .map(tag => `<span class="badge">${escapeHtml(tag)}</span>`)
+    .join('');
+  return `
+    <article class="card${card.archived ? ' archived' : ''}${activeVote && activeVote.cardId === card.id ? ' voting' : ''}" draggable="false" data-card-id="${escapeHtml(card.id)}" tabindex="0">
+      <div class="card-meta">
+        <span>${escapeHtml(card.requirementId)}</span>
+        <span>${escapeHtml(card.project)}</span>
+      </div>
+      <div class="card-title">${escapeHtml(card.title)}</div>
+      <div class="summary">${escapeHtml(card.summary)}</div>
+      <div class="badges">${voteBadge}${archivedBadge}${backlogBadge}${tags}</div>
+    </article>
+  `;
+}
+
+function renderBoard() {
+  const state = normalizedBoardState();
+  const cards = currentCards();
+  renderStats(cards);
+  renderProjectBars(cards);
+  const board = byId('board');
+  board.innerHTML = data.columns.map(col => {
+    const laneCards = (state.order[col.id] || [])
+      .map(id => cardById.get(id))
+      .filter(Boolean)
+      .map(card => cloneCard(card, state))
+      .filter(card => card.moscow === col.id && filterCard(card));
+    return `
+      <section class="lane" data-lane="${escapeHtml(col.id)}">
+        <div class="lane-head">
+          <div class="lane-title">
+            <div><span class="lane-letter">${escapeHtml(col.letter)}</span><span class="lane-name">${escapeHtml(col.title)}</span></div>
+            <span class="lane-count">${laneCards.length}</span>
           </div>
-          <div class="card-title">${escapeHtml(card.title)}</div>
-          <div class="summary">${escapeHtml(card.summary)}</div>
-          <div class="badges">${backlogBadge}${tags}</div>
-        </article>
-      `;
-    }
-
-    function renderBoard() {
-      const cards = currentCards();
-      renderStats(cards);
-      renderProjectBars(cards);
-      const board = document.getElementById('board');
-      board.innerHTML = data.columns.map(col => {
-        const laneIds = state.order[col.id] || [];
-        const laneCards = laneIds.map(id => cardById.get(id)).filter(Boolean)
-          .map(cloneCardWithMoscow)
-          .filter(card => card.moscow === col.id && filterCard(card));
-        return `
-          <section class="lane" data-lane="${escapeHtml(col.id)}">
-            <div class="lane-head">
-              <div class="lane-title">
-                <div><span class="lane-letter">${escapeHtml(col.letter)}</span><span class="lane-name">${escapeHtml(col.title)}</span></div>
-                <span class="lane-count">${laneCards.length}</span>
-              </div>
-              <div class="lane-subtitle">${escapeHtml(col.subtitle)}</div>
-            </div>
-            <div class="dropzone" data-column="${escapeHtml(col.id)}">${laneCards.map(cardHtml).join('')}<div class="empty">Нет карточек</div></div>
-          </section>
-        `;
-      }).join('');
-      bindCards();
-    }
-
-    function bindCards() {
-      for (const node of document.querySelectorAll('.card')) {
-        node.addEventListener('mousedown', event => startMouseDrag(event, node));
-        node.addEventListener('click', event => {
-          if (suppressClick) {
-            event.preventDefault();
-            return;
-          }
-          openDetail(node.dataset.cardId);
-        });
-        node.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            openDetail(node.dataset.cardId);
-          }
-        });
-      }
-    }
-
-    function startMouseDrag(event, node) {
-      if (event.button !== 0) return;
-      const id = node.dataset.cardId;
-      const startX = event.clientX;
-      const startY = event.clientY;
-      const rect = node.getBoundingClientRect();
-      let moved = false;
-      let ghost = null;
-      let activeZone = null;
-
-      function setActiveZone(zone) {
-        if (activeZone === zone) return;
-        if (activeZone) activeZone.classList.remove('over');
-        activeZone = zone;
-        if (activeZone) activeZone.classList.add('over');
-      }
-
-      function cleanup() {
-        if (ghost) ghost.remove();
-        node.classList.remove('drag-source');
-        document.body.classList.remove('dragging');
-        if (activeZone) activeZone.classList.remove('over');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-      }
-
-      function onMove(moveEvent) {
-        const dx = moveEvent.clientX - startX;
-        const dy = moveEvent.clientY - startY;
-        if (!moved && Math.hypot(dx, dy) > 8) {
-          moved = true;
-          suppressClick = true;
-          node.classList.add('drag-source');
-          document.body.classList.add('dragging');
-          ghost = node.cloneNode(true);
-          ghost.classList.add('drag-ghost');
-          ghost.style.width = rect.width + 'px';
-          document.body.appendChild(ghost);
-        }
-        if (!moved) return;
-        moveEvent.preventDefault();
-        ghost.style.left = moveEvent.clientX + 'px';
-        ghost.style.top = moveEvent.clientY + 'px';
-        const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
-        setActiveZone(target ? target.closest('.dropzone') : null);
-      }
-
-      function onUp() {
-        const targetColumn = moved && activeZone ? activeZone.dataset.column : null;
-        cleanup();
-        if (targetColumn) moveCard(id, targetColumn);
-        window.setTimeout(() => { suppressClick = false; }, 80);
-      }
-
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    }
-
-    function moveCard(id, column) {
-      if (columns.indexOf(column) < 0) return;
-      for (const col of columns) {
-        state.order[col] = (state.order[col] || []).filter(cardId => cardId !== id);
-      }
-      state.positions[id] = column;
-      state.order[column].push(id);
-      saveState();
-      renderBoard();
-      if (activeCardId === id && document.getElementById('detailDialog').open) {
-        openDetail(id, true);
-      }
-    }
-
-    function openDetail(id, keepOpen = false) {
-      const card = currentCards().find(item => item.id === id);
-      if (!card) return;
-      activeCardId = id;
-      document.getElementById('modalMeta').innerHTML = `
-        <span>${escapeHtml(card.requirementId)} · ${escapeHtml(card.project)}</span>
-        <span>${escapeHtml(card.sourceType)}</span>
-      `;
-      document.getElementById('modalTitle').textContent = card.title;
-      document.getElementById('modalMoves').innerHTML = data.columns.map(col => `
-        <button data-move="${escapeHtml(col.id)}" class="${card.moscow === col.id ? 'active' : ''}" title="${escapeHtml(col.title)}">${escapeHtml(col.letter)}</button>
-      `).join('');
-      for (const button of document.querySelectorAll('#modalMoves button')) {
-        button.addEventListener('click', () => moveCard(id, button.dataset.move));
-      }
-
-      const backlogHtml = card.backlogMatches.length
-        ? `<table class="backlog-table">
-            <thead><tr><th>ID</th><th>Задача</th><th>Статус</th><th>Сложн.</th><th>Важн.</th></tr></thead>
-            <tbody>
-              ${card.backlogMatches.map(match => `
-                <tr>
-                  <td>${escapeHtml(match.id)}</td>
-                  <td><strong>${escapeHtml(match.title)}</strong><br>${escapeHtml(match.effect || match.rationale)}</td>
-                  <td>${escapeHtml(match.status)}</td>
-                  <td>${escapeHtml(match.complexity)}</td>
-                  <td>${escapeHtml(match.importance)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>`
-        : '<div class="subtle">Связь с задачами беклога не зафиксирована.</div>';
-
-      document.getElementById('modalBody').innerHTML = `
-        <div class="detail-grid">
-          <section>
-            <div class="section-title">Основные моменты</div>
-            <p>${escapeHtml(card.summary)}</p>
-            <ul class="detail-list">
-              ${card.details.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
-            </ul>
-          </section>
-          <section>
-            <div class="section-title">Атрибуты</div>
-            <div class="kv"><span>MoSCoW</span><strong>${escapeHtml(card.moscow.toUpperCase())}</strong></div>
-            <div class="kv"><span>Причина</span><div>${escapeHtml(card.moscowReason)}</div></div>
-            <div class="kv"><span>Источник</span><div>${escapeHtml(card.sourceFiles.join(', '))}</div></div>
-            <div class="kv"><span>Теги</span><div>${escapeHtml(card.tags.join(', '))}</div></div>
-          </section>
+          <div class="lane-subtitle">${escapeHtml(col.subtitle)}</div>
         </div>
-        <section>
-          <div class="section-title">Связь с беклогом</div>
-          ${backlogHtml}
-        </section>
-        <section>
-          <div class="section-title">Фрагмент источника</div>
-          <p>${escapeHtml(card.sourceExcerpt)}</p>
-        </section>
-      `;
-      const dialog = document.getElementById('detailDialog');
-      if (!keepOpen && !dialog.open) dialog.showModal();
-    }
+        <div class="dropzone" data-column="${escapeHtml(col.id)}">${laneCards.map(cardHtml).join('')}<div class="empty">Нет карточек</div></div>
+      </section>
+    `;
+  }).join('');
+  bindCards();
+}
 
-    function exportRows() {
-      return currentCards().map(card => ({
-        id: card.id,
-        requirementId: card.requirementId,
-        title: card.title,
-        project: card.project,
-        moscow: card.moscow,
-        sourceType: card.sourceType,
-        sourceFiles: card.sourceFiles.join(', '),
-        inBacklog: card.backlogMatches.length ? 'да' : 'нет',
-        backlogIds: card.backlogMatches.map(match => match.id).join(', '),
-        backlogTitles: card.backlogMatches.map(match => match.title).join(' | '),
-        summary: card.summary,
-      }));
-    }
-
-    function download(name, mime, content) {
-      const blob = new Blob([content], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    function csvEscape(value) {
-      return '"' + String(value == null ? '' : value).replace(/"/g, '""') + '"';
-    }
-
-    function exportCsv() {
-      const rows = exportRows();
-      const headers = Object.keys(rows[0] || { id: '' });
-      const csv = [headers.map(csvEscape).join(';')]
-        .concat(rows.map(row => headers.map(header => csvEscape(row[header])).join(';')))
-        .join('\n');
-      download('moscow-prioritization.csv', 'text/csv;charset=utf-8', '\ufeff' + csv);
-    }
-
-    function exportJson() {
-      const payload = {
-        exportedAt: new Date().toISOString(),
-        sourceGeneratedAt: data.generatedAt,
-        cards: exportRows(),
-      };
-      download('moscow-prioritization.json', 'application/json;charset=utf-8', JSON.stringify(payload, null, 2));
-    }
-
-    function setupFilters() {
-      const select = document.getElementById('projectFilter');
-      const projects = [...new Set(data.cards.map(card => card.project))].sort((a, b) => a.localeCompare(b, 'ru'));
-      select.innerHTML = '<option value="all">Все проекты</option>' + projects.map(project => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`).join('');
-      for (const id of ['search', 'projectFilter', 'backlogFilter']) {
-        document.getElementById(id).addEventListener('input', renderBoard);
-        document.getElementById(id).addEventListener('change', renderBoard);
+function bindCards() {
+  for (const node of document.querySelectorAll('.card')) {
+    node.addEventListener('mousedown', event => startMouseDrag(event, node));
+    node.addEventListener('click', event => {
+      if (suppressClick) {
+        event.preventDefault();
+        return;
       }
-      document.getElementById('clearFilters').addEventListener('click', () => {
-        document.getElementById('search').value = '';
-        document.getElementById('projectFilter').value = 'all';
-        document.getElementById('backlogFilter').value = 'all';
-        renderBoard();
-      });
-    }
+      openDetail(node.dataset.cardId);
+    });
+    node.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openDetail(node.dataset.cardId);
+      }
+    });
+  }
+}
 
-    function showLoadError(message) {
-      document.getElementById('board').innerHTML = `
-        <div class="loading-state error">
-          <strong>Не удалось загрузить данные дашборда.</strong><br>
-          ${escapeHtml(message)}<br>
-          Попробуйте обновить страницу с очисткой кэша: Ctrl+F5.
-        </div>
-      `;
-    }
+function startMouseDrag(event, node) {
+  if (!isAdmin() || event.button !== 0) return;
+  const id = node.dataset.cardId;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const rect = node.getBoundingClientRect();
+  let moved = false;
+  let ghost = null;
+  let activeZone = null;
 
-    function initializeDashboard(payload) {
-      data = payload;
-      cardById = new Map(data.cards.map(card => [card.id, card]));
-      storageKey = 'moscow-dashboard-state-v2:' + data.generatedAt;
-      columns = data.columns.map(col => col.id);
-      state = loadState();
-      setupFilters();
-      renderSources();
-      renderBoard();
-    }
+  function setActiveZone(zone) {
+    if (activeZone === zone) return;
+    if (activeZone) activeZone.classList.remove('over');
+    activeZone = zone;
+    if (activeZone) activeZone.classList.add('over');
+  }
 
-    function loadText(url, onSuccess, onError) {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.onreadystatechange = function () {
-        if (xhr.readyState !== 4) return;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            onSuccess(xhr.responseText);
-          } catch (error) {
-            onError('Файл данных получен, но не разобран браузером: ' + error.message);
-          }
-        } else {
-          onError('HTTP ' + xhr.status + ' при загрузке ' + url + '.');
-        }
-      };
-      xhr.onerror = function () {
-        onError('Сетевая ошибка при загрузке ' + url + '.');
-      };
-      xhr.send();
-    }
+  function cleanup() {
+    if (ghost) ghost.remove();
+    node.classList.remove('drag-source');
+    document.body.classList.remove('dragging');
+    if (activeZone) activeZone.classList.remove('over');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
 
-    function loadDashboardData() {
-      loadText('chunks.json?v=202606031703', function (manifestText) {
-        let manifest;
+  function onMove(moveEvent) {
+    const dx = moveEvent.clientX - startX;
+    const dy = moveEvent.clientY - startY;
+    if (!moved && Math.hypot(dx, dy) > 8) {
+      moved = true;
+      suppressClick = true;
+      node.classList.add('drag-source');
+      document.body.classList.add('dragging');
+      ghost = node.cloneNode(true);
+      ghost.classList.add('drag-ghost');
+      ghost.style.width = rect.width + 'px';
+      document.body.appendChild(ghost);
+    }
+    if (!moved) return;
+    moveEvent.preventDefault();
+    ghost.style.left = moveEvent.clientX + 'px';
+    ghost.style.top = moveEvent.clientY + 'px';
+    const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+    setActiveZone(target ? target.closest('.dropzone') : null);
+  }
+
+  async function onUp() {
+    const targetColumn = moved && activeZone ? activeZone.dataset.column : null;
+    cleanup();
+    if (targetColumn) await adminMove(id, targetColumn);
+    window.setTimeout(() => { suppressClick = false; }, 80);
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function voteButtonsHtml(activeVote, compact = false) {
+  if (!activeVote) return '';
+  const selected = localVotes()[activeVote.id];
+  return data.columns.map(col => `
+    <button data-vote-column="${escapeHtml(col.id)}" class="${selected === col.id ? 'active' : ''}" title="${escapeHtml(col.title)}">
+      ${compact ? escapeHtml(col.letter) : escapeHtml(col.letter + ' ' + col.title)}
+    </button>
+  `).join('');
+}
+
+function tallyHtml() {
+  const summary = remoteState && remoteState.voteSummary ? remoteState.voteSummary : null;
+  if (!summary) return '';
+  return data.columns.map(col => {
+    const count = summary.counts && summary.counts[col.id] ? summary.counts[col.id] : 0;
+    const leader = summary.leaders && summary.leaders.indexOf(col.id) >= 0;
+    return `<span class="vote-count${leader ? ' leader' : ''}">${escapeHtml(col.letter)} ${count}</span>`;
+  }).join('');
+}
+
+function renderVotePanel() {
+  const activeVote = remoteState && remoteState.activeVote;
+  const panel = byId('votePanel');
+  if (!activeVote) {
+    panel.className = 'vote-panel muted-panel';
+    panel.innerHTML = 'Нет активного голосования';
+    return;
+  }
+  const card = cardById.get(activeVote.cardId);
+  panel.className = 'vote-panel';
+  panel.innerHTML = `
+    <div class="vote-title">${card ? escapeHtml(card.requirementId + ' · ' + card.title) : escapeHtml(activeVote.cardId)}</div>
+    <div class="vote-counts">${tallyHtml()}</div>
+    <div class="vote-actions">${voteButtonsHtml(activeVote, true)}</div>
+    ${isAdmin() ? '<div class="vote-actions admin-vote-actions"><button id="finishVote">Завершить</button><button id="cancelVote">Отменить</button></div>' : ''}
+  `;
+  for (const button of panel.querySelectorAll('[data-vote-column]')) {
+    button.addEventListener('click', () => submitVote(button.dataset.voteColumn));
+  }
+  const finish = byId('finishVote');
+  if (finish) finish.addEventListener('click', () => adminFinishVote());
+  const cancel = byId('cancelVote');
+  if (cancel) cancel.addEventListener('click', () => adminCancelVote());
+}
+
+function renderAuthState() {
+  byId('adminLogin').hidden = isAdmin();
+  byId('adminPin').hidden = isAdmin();
+  byId('adminLogout').hidden = !isAdmin();
+  byId('archiveToggle').hidden = !isAdmin();
+  byId('archiveToggle').classList.toggle('active', archiveMode);
+  for (const node of document.querySelectorAll('.admin-only')) node.hidden = !isAdmin();
+  document.body.classList.toggle('admin-mode', isAdmin());
+}
+
+function renderAll() {
+  if (!data) return;
+  renderAuthState();
+  renderVotePanel();
+  renderBoard();
+  if (activeCardId && byId('detailDialog').open) openDetail(activeCardId, true);
+}
+
+async function submitVote(column) {
+  const activeVote = remoteState && remoteState.activeVote;
+  if (!activeVote) return setStatus('Сейчас нет активного голосования.', 'error');
+  if (!participant || !participant.id) return setStatus('Введите имя участника перед голосованием.', 'error');
+  try {
+    remoteState = await api('vote', {
+      method: 'POST',
+      body: {
+        participantId: participant.id,
+        voteId: activeVote.id,
+        cardId: activeVote.cardId,
+        column,
+      },
+    });
+    rememberLocalVote(activeVote.id, column);
+    setStatus('Голос учтён.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось проголосовать: ' + error.message, 'error');
+  }
+}
+
+async function adminMove(cardId, column) {
+  try {
+    remoteState = await api('admin-move', { method: 'POST', body: { cardId, column } });
+    setStatus('Карточка перенесена.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось перенести карточку: ' + error.message, 'error');
+  }
+}
+
+async function adminArchive(cardId) {
+  try {
+    remoteState = await api('admin-archive', { method: 'POST', body: { cardId } });
+    setStatus('Карточка отправлена в архив.', 'ok');
+    byId('detailDialog').close();
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось архивировать карточку: ' + error.message, 'error');
+  }
+}
+
+async function adminRestore(cardId) {
+  try {
+    remoteState = await api('admin-restore', { method: 'POST', body: { cardId } });
+    setStatus('Карточка восстановлена.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось восстановить карточку: ' + error.message, 'error');
+  }
+}
+
+async function adminStartVote(cardId) {
+  try {
+    remoteState = await api('admin-vote-start', { method: 'POST', body: { cardId } });
+    setStatus('Голосование запущено.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось запустить голосование: ' + error.message, 'error');
+  }
+}
+
+async function adminFinishVote() {
+  const summary = remoteState && remoteState.voteSummary ? remoteState.voteSummary : null;
+  let column = null;
+  if (!summary || !summary.winner) {
+    column = window.prompt('Ничья или нет голосов. Введите итоговую колонку: must, should, could, wont или done');
+    if (!column) return;
+    column = column.trim().toLowerCase();
+  }
+  try {
+    remoteState = await api('admin-vote-finish', { method: 'POST', body: column ? { column } : {} });
+    setStatus('Голосование завершено, карточка перенесена.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось завершить голосование: ' + error.message, 'error');
+  }
+}
+
+async function adminCancelVote() {
+  try {
+    remoteState = await api('admin-vote-cancel', { method: 'POST', body: {} });
+    setStatus('Голосование отменено.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось отменить голосование: ' + error.message, 'error');
+  }
+}
+
+function detailActions(card) {
+  const activeVote = remoteState && remoteState.activeVote;
+  if (isAdmin()) {
+    const moveButtons = data.columns.map(col => `
+      <button data-move="${escapeHtml(col.id)}" class="${card.moscow === col.id ? 'active' : ''}" title="${escapeHtml(col.title)}">${escapeHtml(col.letter)}</button>
+    `).join('');
+    const voteButtons = activeVote
+      ? '<button id="modalFinishVote">Завершить голосование</button><button id="modalCancelVote">Отменить голосование</button>'
+      : '<button id="modalStartVote">Запустить голосование</button>';
+    const archiveButton = card.archived
+      ? '<button id="modalRestore">Вернуть из архива</button>'
+      : '<button id="modalArchive" class="danger">В архив</button>';
+    return `<div class="move-buttons">${moveButtons}</div><div class="modal-admin-actions">${voteButtons}${archiveButton}</div>`;
+  }
+  if (activeVote && activeVote.cardId === card.id) {
+    return `<div class="move-buttons vote-buttons">${voteButtonsHtml(activeVote)}</div>`;
+  }
+  return '<div class="subtle">Админ может запустить голосование по этой карточке.</div>';
+}
+
+function bindDetailActions(card) {
+  for (const button of document.querySelectorAll('[data-move]')) {
+    button.addEventListener('click', () => adminMove(card.id, button.dataset.move));
+  }
+  for (const button of document.querySelectorAll('[data-vote-column]')) {
+    button.addEventListener('click', () => submitVote(button.dataset.voteColumn));
+  }
+  const start = byId('modalStartVote');
+  if (start) start.addEventListener('click', () => adminStartVote(card.id));
+  const finish = byId('modalFinishVote');
+  if (finish) finish.addEventListener('click', () => adminFinishVote());
+  const cancel = byId('modalCancelVote');
+  if (cancel) cancel.addEventListener('click', () => adminCancelVote());
+  const archive = byId('modalArchive');
+  if (archive) archive.addEventListener('click', () => adminArchive(card.id));
+  const restore = byId('modalRestore');
+  if (restore) restore.addEventListener('click', () => adminRestore(card.id));
+}
+
+function openDetail(id, keepOpen = false) {
+  const card = currentCards().find(item => item.id === id);
+  if (!card) return;
+  activeCardId = id;
+  byId('modalMeta').innerHTML = `
+    <span>${escapeHtml(card.requirementId)} · ${escapeHtml(card.project)}</span>
+    <span>${escapeHtml(card.sourceType)}</span>
+  `;
+  byId('modalTitle').textContent = card.title;
+  byId('modalMoves').innerHTML = detailActions(card);
+  bindDetailActions(card);
+
+  const backlogHtml = card.backlogMatches.length
+    ? `<table class="backlog-table">
+        <thead><tr><th>ID</th><th>Задача</th><th>Статус</th><th>Сложн.</th><th>Важн.</th></tr></thead>
+        <tbody>
+          ${card.backlogMatches.map(match => `
+            <tr>
+              <td>${escapeHtml(match.id)}</td>
+              <td><strong>${escapeHtml(match.title)}</strong><br>${escapeHtml(match.effect || match.rationale)}</td>
+              <td>${escapeHtml(match.status)}</td>
+              <td>${escapeHtml(match.complexity)}</td>
+              <td>${escapeHtml(match.importance)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`
+    : '<div class="subtle">Связь с задачами беклога не зафиксирована.</div>';
+
+  byId('modalBody').innerHTML = `
+    <div class="detail-grid">
+      <section>
+        <div class="section-title">Основные моменты</div>
+        <p>${escapeHtml(card.summary)}</p>
+        <ul class="detail-list">
+          ${card.details.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </section>
+      <section>
+        <div class="section-title">Атрибуты</div>
+        <div class="kv"><span>MoSCoW</span><strong>${escapeHtml(card.moscow.toUpperCase())}</strong></div>
+        <div class="kv"><span>Статус</span><div>${card.archived ? 'Архив' : 'Активна'}</div></div>
+        <div class="kv"><span>Причина</span><div>${escapeHtml(card.moscowReason)}</div></div>
+        <div class="kv"><span>Источник</span><div>${escapeHtml(card.sourceFiles.join(', '))}</div></div>
+        <div class="kv"><span>Теги</span><div>${escapeHtml(card.tags.join(', '))}</div></div>
+      </section>
+    </div>
+    <section>
+      <div class="section-title">Связь с беклогом</div>
+      ${backlogHtml}
+    </section>
+    <section>
+      <div class="section-title">Фрагмент источника</div>
+      <p>${escapeHtml(card.sourceExcerpt)}</p>
+    </section>
+  `;
+  const dialog = byId('detailDialog');
+  if (!keepOpen && !dialog.open) dialog.showModal();
+}
+
+function exportRows() {
+  return currentCards()
+    .filter(card => !card.archived)
+    .map(card => ({
+      id: card.id,
+      requirementId: card.requirementId,
+      title: card.title,
+      project: card.project,
+      moscow: card.moscow,
+      archived: card.archived ? 'да' : 'нет',
+      sourceType: card.sourceType,
+      sourceFiles: card.sourceFiles.join(', '),
+      inBacklog: card.backlogMatches.length ? 'да' : 'нет',
+      backlogIds: card.backlogMatches.map(match => match.id).join(', '),
+      backlogTitles: card.backlogMatches.map(match => match.title).join(' | '),
+      summary: card.summary,
+    }));
+}
+
+function download(name, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  return '"' + String(value == null ? '' : value).replace(/"/g, '""') + '"';
+}
+
+function exportCsv() {
+  const rows = exportRows();
+  const headers = Object.keys(rows[0] || { id: '' });
+  const csv = [headers.map(csvEscape).join(';')]
+    .concat(rows.map(row => headers.map(header => csvEscape(row[header])).join(';')))
+    .join('\n');
+  download('moscow-prioritization.csv', 'text/csv;charset=utf-8', '\ufeff' + csv);
+}
+
+function exportJson() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    sourceGeneratedAt: data.generatedAt,
+    boardState: remoteState ? remoteState.board : null,
+    cards: exportRows(),
+  };
+  download('moscow-prioritization.json', 'application/json;charset=utf-8', JSON.stringify(payload, null, 2));
+}
+
+function setupFilters() {
+  const select = byId('projectFilter');
+  const projects = [...new Set(data.cards.map(card => card.project))].sort((a, b) => a.localeCompare(b, 'ru'));
+  select.innerHTML = '<option value="all">Все проекты</option>' + projects.map(project => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`).join('');
+  for (const id of ['search', 'projectFilter', 'backlogFilter']) {
+    byId(id).addEventListener('input', renderAll);
+    byId(id).addEventListener('change', renderAll);
+  }
+  byId('clearFilters').addEventListener('click', () => {
+    byId('search').value = '';
+    byId('projectFilter').value = 'all';
+    byId('backlogFilter').value = 'all';
+    renderAll();
+  });
+  byId('archiveToggle').addEventListener('click', () => {
+    archiveMode = !archiveMode;
+    renderAll();
+  });
+}
+
+function showLoadError(message) {
+  byId('board').innerHTML = `
+    <div class="loading-state error">
+      <strong>Не удалось загрузить данные дашборда.</strong><br>
+      ${escapeHtml(message)}<br>
+      Попробуйте обновить страницу с очисткой кэша: Ctrl+F5.
+    </div>
+  `;
+}
+
+function loadText(url, onSuccess, onError) {
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', url, true);
+  xhr.onreadystatechange = function () {
+    if (xhr.readyState !== 4) return;
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try {
+        onSuccess(xhr.responseText);
+      } catch (error) {
+        onError('Файл данных получен, но не разобран браузером: ' + error.message);
+      }
+    } else {
+      onError('HTTP ' + xhr.status + ' при загрузке ' + url + '.');
+    }
+  };
+  xhr.onerror = function () {
+    onError('Сетевая ошибка при загрузке ' + url + '.');
+  };
+  xhr.send();
+}
+
+function loadDashboardData() {
+  loadText('chunks.json?v=20260629-functions1', function (manifestText) {
+    let manifest;
+    try {
+      manifest = JSON.parse(manifestText);
+    } catch (error) {
+      showLoadError('Не удалось разобрать chunks.json: ' + error.message);
+      return;
+    }
+    const parts = [];
+    let index = 0;
+    function loadNext() {
+      if (index >= manifest.files.length) {
         try {
-          manifest = JSON.parse(manifestText);
+          initializeDashboard(JSON.parse(parts.join('')));
         } catch (error) {
-          showLoadError('Не удалось разобрать chunks.json: ' + error.message);
-          return;
+          showLoadError('Не удалось разобрать данные дашборда: ' + error.message);
         }
-        const parts = [];
-        let index = 0;
-        function loadNext() {
-          if (index >= manifest.files.length) {
-            try {
-              initializeDashboard(JSON.parse(parts.join('')));
-            } catch (error) {
-              showLoadError('Не удалось разобрать данные дашборда: ' + error.message);
-            }
-            return;
-          }
-          const file = manifest.files[index];
-          loadText(file + '?v=' + manifest.version, function (partText) {
-            parts.push(partText);
-            index += 1;
-            loadNext();
-          }, showLoadError);
-        }
+        return;
+      }
+      const file = manifest.files[index];
+      loadText(file + '?v=' + manifest.version, function (partText) {
+        parts.push(partText);
+        index += 1;
         loadNext();
       }, showLoadError);
     }
+    loadNext();
+  }, showLoadError);
+}
 
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      if (!data) return;
-      state = initialState();
-      saveState();
-      renderBoard();
+function initializeDashboard(payload) {
+  data = payload;
+  ensureDoneColumn(data);
+  cardById = new Map(data.cards.map(card => [card.id, card]));
+  columns = data.columns;
+  remoteState = { board: emptyBoardState(), activeVote: null, voteSummary: null };
+  loadLocalIdentity();
+  setupFilters();
+  renderSources();
+  renderAll();
+  loadRemoteState();
+  startPolling();
+}
+
+async function saveParticipant() {
+  try {
+    const saved = await api('participant', {
+      method: 'POST',
+      body: {
+        participantId: participant && participant.id,
+        name: byId('participantName').value,
+      },
     });
-    document.getElementById('jsonBtn').addEventListener('click', exportJson);
-    document.getElementById('csvBtn').addEventListener('click', exportCsv);
-    document.getElementById('closeDialog').addEventListener('click', () => document.getElementById('detailDialog').close());
-    document.getElementById('detailDialog').addEventListener('close', () => { activeCardId = null; });
+    participant = saved.participant;
+    localStorage.setItem(PARTICIPANT_KEY, JSON.stringify(participant));
+    setStatus('Участник сохранён: ' + participant.name, 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось сохранить участника: ' + error.message, 'error');
+  }
+}
 
-    loadDashboardData();
+async function loginAdmin() {
+  try {
+    const result = await api('admin-login', {
+      method: 'POST',
+      body: { pin: byId('adminPin').value },
+    });
+    adminToken = result.token;
+    localStorage.setItem(ADMIN_KEY, adminToken);
+    byId('adminPin').value = '';
+    setStatus('Админский режим включён.', 'ok');
+    await loadRemoteState(true);
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось войти как админ: ' + error.message, 'error');
+  }
+}
+
+function logoutAdmin(render = true) {
+  adminToken = '';
+  archiveMode = false;
+  localStorage.removeItem(ADMIN_KEY);
+  if (render) {
+    setStatus('Админский режим выключен.', 'ok');
+    renderAll();
+  }
+}
+
+byId('refreshBtn').addEventListener('click', () => loadRemoteState());
+byId('jsonBtn').addEventListener('click', exportJson);
+byId('csvBtn').addEventListener('click', exportCsv);
+byId('saveParticipant').addEventListener('click', saveParticipant);
+byId('participantName').addEventListener('keydown', event => {
+  if (event.key === 'Enter') saveParticipant();
+});
+byId('adminLogin').addEventListener('click', loginAdmin);
+byId('adminPin').addEventListener('keydown', event => {
+  if (event.key === 'Enter') loginAdmin();
+});
+byId('adminLogout').addEventListener('click', () => logoutAdmin());
+byId('closeDialog').addEventListener('click', () => byId('detailDialog').close());
+byId('detailDialog').addEventListener('close', () => { activeCardId = null; });
+
+loadDashboardData();

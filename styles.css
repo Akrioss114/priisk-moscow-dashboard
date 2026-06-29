@@ -9,6 +9,7 @@
       --should: #b57710;
       --could: #24756f;
       --wont: #5b6470;
+      --done: #2f6f3e;
       --focus: #245fd6;
       --shadow: 0 12px 30px rgba(23, 32, 29, 0.13);
     }
@@ -153,6 +154,99 @@
       padding: 7px 10px;
     }
 
+    .control-strip {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.9fr) minmax(260px, 0.85fr) minmax(320px, 1.4fr);
+      gap: 10px;
+      align-items: stretch;
+      padding: 12px 22px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .control-block {
+      display: grid;
+      gap: 7px;
+      align-content: start;
+      min-width: 0;
+    }
+
+    .control-block label,
+    .control-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .inline-form {
+      display: flex;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .inline-form .field {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .vote-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      display: grid;
+      gap: 8px;
+      background: #fbfcfc;
+      min-height: 54px;
+    }
+
+    .muted-panel {
+      color: var(--muted);
+      align-content: center;
+    }
+
+    .vote-title {
+      font-weight: 720;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .vote-counts,
+    .vote-actions,
+    .modal-admin-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .vote-count {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef3f1;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .vote-count.leader {
+      background: #e4f1e7;
+      color: #24592f;
+      font-weight: 760;
+    }
+
+    .status-line {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      line-height: 1.35;
+      min-height: 18px;
+    }
+
+    .status-line.ok { color: #25663c; }
+    .status-line.error { color: #9b2f2f; }
+
     .board-wrap {
       overflow-x: auto;
       overflow-y: hidden;
@@ -161,9 +255,9 @@
 
     .board {
       display: grid;
-      grid-template-columns: repeat(4, minmax(280px, 1fr));
+      grid-template-columns: repeat(5, minmax(260px, 1fr));
       gap: 12px;
-      min-width: 1120px;
+      min-width: 1320px;
       align-items: start;
     }
 
@@ -197,6 +291,7 @@
     .lane[data-lane="should"] { --lane-color: var(--should); }
     .lane[data-lane="could"] { --lane-color: var(--could); }
     .lane[data-lane="wont"] { --lane-color: var(--wont); }
+    .lane[data-lane="done"] { --lane-color: var(--done); }
 
     .lane-head {
       border-top: 5px solid var(--lane-color);
@@ -261,10 +356,14 @@
       background: var(--surface);
       box-shadow: 0 2px 8px rgba(23, 32, 29, 0.05);
       padding: 10px;
-      cursor: grab;
+      cursor: pointer;
       min-height: 142px;
       display: grid;
       gap: 8px;
+    }
+
+    .admin-mode .card {
+      cursor: grab;
     }
 
     .card:active {
@@ -273,6 +372,16 @@
 
     .card.drag-source {
       opacity: 0.45;
+    }
+
+    .card.archived {
+      opacity: 0.72;
+      background: #f4f6f5;
+    }
+
+    .card.voting {
+      border-color: #245fd6;
+      box-shadow: 0 0 0 2px rgba(36, 95, 214, 0.12);
     }
 
     .drag-ghost {
@@ -342,6 +451,29 @@
       background: #edf8f5;
       color: #13584f;
       font-weight: 650;
+    }
+
+    .badge.archive {
+      background: #eeeeee;
+      color: #5b6470;
+    }
+
+    .badge.vote {
+      background: #e8eefc;
+      color: #245fd6;
+    }
+
+    button.active {
+      border-color: var(--focus);
+      background: #edf3ff;
+      color: #1749a6;
+      font-weight: 740;
+    }
+
+    button.danger {
+      border-color: #dbb4b4;
+      color: #8f2f2f;
+      background: #fff7f7;
     }
 
     .empty {
@@ -542,6 +674,10 @@
         grid-template-columns: 1fr 1fr;
       }
 
+      .control-strip {
+        grid-template-columns: 1fr;
+      }
+
       .toolbar .actions {
         grid-column: 1 / -1;
         justify-content: flex-start;
@@ -556,6 +692,7 @@
     @media (max-width: 680px) {
       .topbar,
       .toolbar,
+      .control-strip,
       .board-wrap,
       .side {
         padding-left: 12px;
