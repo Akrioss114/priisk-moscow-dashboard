@@ -1,0 +1,9 @@
+.git
+.netlify
+.wrangler
+.vercel
+cloudflare-dist
+node_modules
+netlify-dev*.log
+cf-*
+*.tmp
