@@ -148,51 +148,83 @@ function loadText(url, onSuccess, onError, options = {}) {
 }
 
 function loadDashboardData() {
-  showLoadProgress('Загрузка карточек...');
-  loadText('dashboard-data.json?v=20260630-single-data1', function (payloadText) {
-    try {
-      initializeDashboard(JSON.parse(payloadText));
-    } catch (error) {
-      showLoadError('Не удалось разобрать dashboard-data.json: ' + error.message);
-    }
-  }, function () {
-    loadDashboardDataFromChunks();
-  }, { maxAttempts: 2, timeoutMs: 8000 });
+  loadDashboardDataFromChunks(function () {
+    showLoadProgress('Загрузка карточек резервным способом...');
+    loadText('dashboard-data.json?v=20260630-single-data1', function (payloadText) {
+      try {
+        initializeDashboard(JSON.parse(payloadText));
+      } catch (error) {
+        showLoadError('Не удалось разобрать dashboard-data.json: ' + error.message);
+      }
+    }, function (message) {
+      showLoadError('Не удалось загрузить данные карточек. ' + message);
+    }, { maxAttempts: 2, timeoutMs: 8000 });
+  });
 }
 
-function loadDashboardDataFromChunks() {
+function finishDashboardData(parts) {
+  try {
+    initializeDashboard(JSON.parse(parts.join('')));
+  } catch (error) {
+    showLoadError('Не удалось разобрать данные дашборда: ' + error.message);
+  }
+}
+
+function loadDashboardDataFromChunks(onFallback) {
   showLoadProgress('Загрузка манифеста данных...');
   loadText('chunks.json?v=20260630-utf8-chunks1', function (manifestText) {
     let manifest;
     try {
       manifest = JSON.parse(manifestText);
     } catch (error) {
-      showLoadError('Не удалось разобрать chunks.json: ' + error.message);
+      if (onFallback) onFallback();
+      else showLoadError('Не удалось разобрать chunks.json: ' + error.message);
       return;
     }
+
     const parts = [];
     let index = 0;
-    function loadNext() {
-      if (index >= manifest.files.length) {
-        try {
-          initializeDashboard(JSON.parse(parts.join('')));
-        } catch (error) {
-          showLoadError('Не удалось разобрать данные дашборда: ' + error.message);
-        }
+    let active = 0;
+    let loaded = 0;
+    let failed = false;
+    const concurrency = Math.min(8, manifest.files.length);
+
+    function fail(message) {
+      if (failed) return;
+      failed = true;
+      if (onFallback) onFallback();
+      else showLoadError(message);
+    }
+
+    function pump() {
+      if (failed) return;
+      if (loaded >= manifest.files.length) {
+        finishDashboardData(parts);
         return;
       }
-      const file = manifest.files[index];
-      showLoadProgress('Загрузка карточек: файл ' + (index + 1) + ' из ' + manifest.files.length + '...');
-      loadText(file + '?v=' + manifest.version, function (partText) {
-        parts.push(partText);
+      while (active < concurrency && index < manifest.files.length) {
+        const partIndex = index;
+        const file = manifest.files[partIndex];
         index += 1;
-        loadNext();
-      }, function (message) {
-        showLoadError('Не удалось загрузить ' + file + '. ' + message);
-      }, { maxAttempts: 5, timeoutMs: 15000 });
+        active += 1;
+        showLoadProgress('Загрузка карточек: ' + loaded + ' из ' + manifest.files.length + '...');
+        loadText(file + '?v=' + manifest.version, function (partText) {
+          parts[partIndex] = partText;
+          active -= 1;
+          loaded += 1;
+          showLoadProgress('Загрузка карточек: ' + loaded + ' из ' + manifest.files.length + '...');
+          pump();
+        }, function (message) {
+          fail('Не удалось загрузить ' + file + '. ' + message);
+        }, { maxAttempts: 5, timeoutMs: 15000 });
+      }
     }
-    loadNext();
-  }, showLoadError, { maxAttempts: 5, timeoutMs: 15000 });
+
+    pump();
+  }, function () {
+    if (onFallback) onFallback();
+    else showLoadError('Не удалось загрузить chunks.json.');
+  }, { maxAttempts: 5, timeoutMs: 15000 });
 }
 
 function initializeDashboard(payload) {
