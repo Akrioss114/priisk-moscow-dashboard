@@ -1,5 +1,5 @@
 {
-  "version": "20260630-project-name1",
+  "version": "20260630-utf8-chunks1",
   "files": [
     "data-chunks/part-001.json",
     "data-chunks/part-002.json",
@@ -17,6 +17,17 @@
     "data-chunks/part-014.json",
     "data-chunks/part-015.json",
     "data-chunks/part-016.json",
-    "data-chunks/part-017.json"
+    "data-chunks/part-017.json",
+    "data-chunks/part-018.json",
+    "data-chunks/part-019.json",
+    "data-chunks/part-020.json",
+    "data-chunks/part-021.json",
+    "data-chunks/part-022.json",
+    "data-chunks/part-023.json",
+    "data-chunks/part-024.json",
+    "data-chunks/part-025.json",
+    "data-chunks/part-026.json",
+    "data-chunks/part-027.json",
+    "data-chunks/part-028.json"
   ]
 }

@@ -149,7 +149,7 @@ function loadText(url, onSuccess, onError, options = {}) {
 
 function loadDashboardData() {
   showLoadProgress('Загрузка манифеста данных...');
-  loadText('chunks.json?v=20260630-project-name1', function (manifestText) {
+  loadText('chunks.json?v=20260630-utf8-chunks1', function (manifestText) {
     let manifest;
     try {
       manifest = JSON.parse(manifestText);
