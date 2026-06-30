@@ -1,0 +1,7 @@
+name = "priisk-moscow-dashboard"
+compatibility_date = "2026-06-30"
+pages_build_output_dir = "cloudflare-dist"
+
+[[kv_namespaces]]
+binding = "DASHBOARD_KV"
+id = "c22e92e2fdcb40268078dd5b627e3306"

@@ -3,7 +3,11 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build:cloudflare": "node scripts/build-cloudflare.mjs"
+  },
   "dependencies": {
-    "@netlify/blobs": "^9.1.2"
+    "@netlify/blobs": "^9.1.2",
+    "terser": "^5.43.1"
   }
 }
