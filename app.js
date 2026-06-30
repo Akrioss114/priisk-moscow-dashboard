@@ -148,6 +148,19 @@ function loadText(url, onSuccess, onError, options = {}) {
 }
 
 function loadDashboardData() {
+  showLoadProgress('Загрузка карточек...');
+  loadText('dashboard-data.json?v=20260630-single-data1', function (payloadText) {
+    try {
+      initializeDashboard(JSON.parse(payloadText));
+    } catch (error) {
+      showLoadError('Не удалось разобрать dashboard-data.json: ' + error.message);
+    }
+  }, function () {
+    loadDashboardDataFromChunks();
+  }, { maxAttempts: 2, timeoutMs: 8000 });
+}
+
+function loadDashboardDataFromChunks() {
   showLoadProgress('Загрузка манифеста данных...');
   loadText('chunks.json?v=20260630-utf8-chunks1', function (manifestText) {
     let manifest;

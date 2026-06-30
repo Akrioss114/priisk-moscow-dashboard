@@ -245,6 +245,7 @@
     }
 
     .status-line.ok { color: #25663c; }
+    .status-line.warn { color: #8a5a12; }
     .status-line.error { color: #9b2f2f; }
 
     [hidden] {

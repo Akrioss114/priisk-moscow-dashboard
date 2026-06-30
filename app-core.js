@@ -13,6 +13,7 @@ const API = '/.netlify/functions';
 const PARTICIPANT_KEY = 'moscow-dashboard-participant-v1';
 const ADMIN_KEY = 'moscow-dashboard-admin-token-v1';
 const LOCAL_VOTES_KEY = 'moscow-dashboard-local-votes-v1';
+const API_TIMEOUT_MS = 4500;
 const DONE_COLUMN = {
   id: 'done',
   letter: 'D',
@@ -145,11 +146,21 @@ async function api(path, options = {}) {
   const headers = options.headers || {};
   if (options.body && !headers['content-type']) headers['content-type'] = 'application/json';
   if (adminToken) headers.authorization = 'Bearer ' + adminToken;
-  const response = await fetch(API + '/' + path, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || API_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(API + '/' + path, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new Error(error.name === 'AbortError' ? 'таймаут синхронизации' : 'сервер синхронизации недоступен');
+  } finally {
+    window.clearTimeout(timeout);
+  }
   const text = await response.text();
   let payload = null;
   try {
@@ -171,7 +182,7 @@ async function loadRemoteState(silent = false) {
     renderAll();
   } catch (error) {
     if (!remoteState) remoteState = { board: emptyBoardState(), activeVote: null, voteSummary: null };
-    setStatus('Общая доска недоступна: ' + error.message, 'error');
+    if (!silent) setStatus('Карточки загружены. Синхронизация временно недоступна: ' + error.message + '.', 'warn');
     renderAll();
   }
 }
