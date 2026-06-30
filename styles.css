@@ -156,7 +156,7 @@
 
     .control-strip {
       display: grid;
-      grid-template-columns: minmax(260px, 0.9fr) minmax(260px, 0.85fr) minmax(320px, 1.4fr);
+      grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.4fr);
       gap: 10px;
       align-items: stretch;
       padding: 12px 22px;
@@ -246,6 +246,10 @@
 
     .status-line.ok { color: #25663c; }
     .status-line.error { color: #9b2f2f; }
+
+    [hidden] {
+      display: none !important;
+    }
 
     .board-wrap {
       overflow-x: auto;
@@ -593,6 +597,22 @@
       padding: 16px;
       display: grid;
       gap: 15px;
+    }
+
+    .settings-modal {
+      max-width: 640px;
+    }
+
+    .settings-section {
+      display: grid;
+      gap: 9px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #edf2f0;
+    }
+
+    .settings-section:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
     }
 
     .detail-grid {

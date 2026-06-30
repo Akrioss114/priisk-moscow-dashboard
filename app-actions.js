@@ -1,7 +1,10 @@
 async function submitVote(column) {
   const activeVote = remoteState && remoteState.activeVote;
   if (!activeVote) return setStatus('Сейчас нет активного голосования.', 'error');
-  if (!participant || !participant.id) return setStatus('Введите имя участника перед голосованием.', 'error');
+  if (!participant || !participant.id) {
+    showParticipantForm('Введите имя участника перед первым голосованием.');
+    return;
+  }
   try {
     remoteState = await api('vote', {
       method: 'POST',

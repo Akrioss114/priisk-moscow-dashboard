@@ -127,6 +127,14 @@ function loadLocalIdentity() {
   renderAuthState();
 }
 
+function showParticipantForm(message) {
+  const block = byId('participantBlock');
+  if (block) block.hidden = false;
+  if (message) setStatus(message, 'error');
+  const input = byId('participantName');
+  if (input) input.focus();
+}
+
 function setStatus(message, type) {
   const node = byId('statusLine');
   node.textContent = message;
@@ -419,6 +427,21 @@ function renderVotePanel() {
 }
 
 function renderAuthState() {
+  const hasParticipant = !!(participant && participant.id);
+  const participantBlock = byId('participantBlock');
+  if (participantBlock) participantBlock.hidden = hasParticipant;
+  const participantStatus = byId('participantStatus');
+  if (participantStatus) {
+    participantStatus.textContent = hasParticipant
+      ? 'Голосует как: ' + participant.name + '. Имя сохранено в этом браузере.'
+      : 'Имя участника будет запрошено перед первым голосованием.';
+  }
+  const adminStatus = byId('adminStatus');
+  if (adminStatus) {
+    adminStatus.textContent = isAdmin()
+      ? 'Админский режим включён. Можно двигать, архивировать задачи и управлять голосованием.'
+      : 'Админ может двигать, архивировать задачи и управлять голосованием.';
+  }
   byId('adminLogin').hidden = isAdmin();
   byId('adminPin').hidden = isAdmin();
   byId('adminLogout').hidden = !isAdmin();

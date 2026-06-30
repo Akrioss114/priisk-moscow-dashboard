@@ -77,34 +77,79 @@ function showLoadError(message) {
     <div class="loading-state error">
       <strong>Не удалось загрузить данные дашборда.</strong><br>
       ${escapeHtml(message)}<br>
-      Попробуйте обновить страницу с очисткой кэша: Ctrl+F5.
+      Попробуйте обновить страницу с очисткой кэша: Ctrl+F5. Если вы без VPN, проблема может быть в частичной блокировке файлов данных.
     </div>
   `;
 }
 
-function loadText(url, onSuccess, onError) {
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', url, true);
-  xhr.onreadystatechange = function () {
-    if (xhr.readyState !== 4) return;
-    if (xhr.status >= 200 && xhr.status < 300) {
-      try {
-        onSuccess(xhr.responseText);
-      } catch (error) {
-        onError('Файл данных получен, но не разобран браузером: ' + error.message);
+function showLoadProgress(message) {
+  byId('board').innerHTML = `
+    <div class="loading-state">
+      ${escapeHtml(message)}
+    </div>
+  `;
+}
+
+function addCacheBuster(url, attempt) {
+  const separator = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + separator + 'try=' + attempt + '&t=' + Date.now();
+}
+
+function loadText(url, onSuccess, onError, options = {}) {
+  const maxAttempts = options.maxAttempts || 4;
+  const timeoutMs = options.timeoutMs || 12000;
+  let attempt = 0;
+
+  function runAttempt() {
+    attempt += 1;
+    let finished = false;
+    const requestUrl = attempt > 1 ? addCacheBuster(url, attempt) : url;
+    const xhr = new XMLHttpRequest();
+    const timer = window.setTimeout(function () {
+      if (finished) return;
+      finished = true;
+      xhr.abort();
+      retryOrFail('Таймаут ' + timeoutMs + ' мс при загрузке ' + url + '.');
+    }, timeoutMs);
+
+    function retryOrFail(message) {
+      if (attempt < maxAttempts) {
+        window.setTimeout(runAttempt, 350 * attempt);
+        return;
       }
-    } else {
-      onError('HTTP ' + xhr.status + ' при загрузке ' + url + '.');
+      onError(message + ' Попыток: ' + attempt + '.');
     }
-  };
-  xhr.onerror = function () {
-    onError('Сетевая ошибка при загрузке ' + url + '.');
-  };
-  xhr.send();
+
+    xhr.open('GET', requestUrl, true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4 || finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          onSuccess(xhr.responseText);
+        } catch (error) {
+          onError('Файл ' + url + ' получен, но не разобран браузером: ' + error.message);
+        }
+      } else {
+        retryOrFail('HTTP ' + xhr.status + ' при загрузке ' + url + '.');
+      }
+    };
+    xhr.onerror = function () {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      retryOrFail('Сетевая ошибка при загрузке ' + url + '.');
+    };
+    xhr.send();
+  }
+
+  runAttempt();
 }
 
 function loadDashboardData() {
-  loadText('chunks.json?v=20260629-functions2', function (manifestText) {
+  showLoadProgress('Загрузка манифеста данных...');
+  loadText('chunks.json?v=20260630-project-name1', function (manifestText) {
     let manifest;
     try {
       manifest = JSON.parse(manifestText);
@@ -124,14 +169,17 @@ function loadDashboardData() {
         return;
       }
       const file = manifest.files[index];
+      showLoadProgress('Загрузка карточек: файл ' + (index + 1) + ' из ' + manifest.files.length + '...');
       loadText(file + '?v=' + manifest.version, function (partText) {
         parts.push(partText);
         index += 1;
         loadNext();
-      }, showLoadError);
+      }, function (message) {
+        showLoadError('Не удалось загрузить ' + file + '. ' + message);
+      }, { maxAttempts: 5, timeoutMs: 15000 });
     }
     loadNext();
-  }, showLoadError);
+  }, showLoadError, { maxAttempts: 5, timeoutMs: 15000 });
 }
 
 function initializeDashboard(payload) {
@@ -160,6 +208,7 @@ async function saveParticipant() {
     participant = saved.participant;
     localStorage.setItem(PARTICIPANT_KEY, JSON.stringify(participant));
     setStatus('Участник сохранён: ' + participant.name, 'ok');
+    byId('participantBlock').hidden = true;
     renderAll();
   } catch (error) {
     setStatus('Не удалось сохранить участника: ' + error.message, 'error');
@@ -176,6 +225,8 @@ async function loginAdmin() {
     localStorage.setItem(ADMIN_KEY, adminToken);
     byId('adminPin').value = '';
     setStatus('Админский режим включён.', 'ok');
+    const settings = byId('settingsDialog');
+    if (settings && settings.open) settings.close();
     await loadRemoteState(true);
     renderAll();
   } catch (error) {
@@ -194,11 +245,20 @@ function logoutAdmin(render = true) {
 }
 
 byId('refreshBtn').addEventListener('click', () => loadRemoteState());
+byId('settingsBtn').addEventListener('click', () => byId('settingsDialog').showModal());
+byId('closeSettings').addEventListener('click', () => byId('settingsDialog').close());
 byId('jsonBtn').addEventListener('click', exportJson);
 byId('csvBtn').addEventListener('click', exportCsv);
 byId('saveParticipant').addEventListener('click', saveParticipant);
 byId('participantName').addEventListener('keydown', event => {
   if (event.key === 'Enter') saveParticipant();
+});
+byId('changeParticipant').addEventListener('click', () => {
+  participant = null;
+  localStorage.removeItem(PARTICIPANT_KEY);
+  byId('settingsDialog').close();
+  showParticipantForm('Введите новое имя участника.');
+  renderAll();
 });
 byId('adminLogin').addEventListener('click', loginAdmin);
 byId('adminPin').addEventListener('keydown', event => {

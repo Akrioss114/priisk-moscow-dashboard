@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MoSCoW-доска приоритизации требований</title>
-  <link rel="stylesheet" href="styles.css?v=20260629-functions1">
+  <link rel="stylesheet" href="styles.css?v=20260629-local-ui1">
 </head>
 <body>
   <div class="app">
@@ -16,6 +16,7 @@
         </div>
         <div class="actions">
           <button id="refreshBtn" title="Обновить состояние доски">Обновить</button>
+          <button id="settingsBtn" title="Настройки">Настройки</button>
           <button id="jsonBtn" title="Скачать текущие решения в JSON">JSON</button>
           <button id="csvBtn" class="primary" title="Скачать текущие решения в CSV">CSV</button>
         </div>
@@ -39,19 +40,11 @@
     </section>
 
     <section class="control-strip" aria-label="Участники и голосование">
-      <div class="control-block">
+      <div class="control-block" id="participantBlock">
         <label for="participantName">Участник</label>
         <div class="inline-form">
           <input id="participantName" class="field" type="text" maxlength="80" placeholder="Имя для голосования">
           <button id="saveParticipant">Войти</button>
-        </div>
-      </div>
-      <div class="control-block">
-        <label for="adminPin">Админ</label>
-        <div class="inline-form">
-          <input id="adminPin" class="field" type="password" inputmode="numeric" placeholder="PIN">
-          <button id="adminLogin">Войти</button>
-          <button id="adminLogout" hidden>Выйти</button>
         </div>
       </div>
       <div class="control-block vote-block">
@@ -95,8 +88,38 @@
     </div>
   </dialog>
 
-  <script src="app-core.js?v=20260629-functions2"></script>
-  <script src="app-actions.js?v=20260629-functions2"></script>
-  <script src="app.js?v=20260629-functions2"></script>
+  <dialog id="settingsDialog">
+    <div class="modal settings-modal">
+      <div class="modal-head">
+        <div class="modal-title-row">
+          <div>
+            <div class="card-meta">Настройки доски</div>
+            <h2>Настройки</h2>
+          </div>
+          <button id="closeSettings" aria-label="Закрыть настройки">Закрыть</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <section class="settings-section">
+          <div class="section-title">Админ</div>
+          <div class="inline-form">
+            <input id="adminPin" class="field" type="password" inputmode="numeric" placeholder="PIN администратора">
+            <button id="adminLogin">Войти</button>
+            <button id="adminLogout" hidden>Выйти</button>
+          </div>
+          <div class="subtle" id="adminStatus">Админ может двигать, архивировать задачи и управлять голосованием.</div>
+        </section>
+        <section class="settings-section">
+          <div class="section-title">Участник</div>
+          <div class="subtle" id="participantStatus">Имя участника будет запрошено перед первым голосованием.</div>
+          <button id="changeParticipant">Сменить имя</button>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app-core.js?v=20260629-local-ui1"></script>
+  <script src="app-actions.js?v=20260629-local-ui1"></script>
+  <script src="app.js?v=20260629-local-ui1"></script>
 </body>
 </html>
