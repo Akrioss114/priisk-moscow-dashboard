@@ -237,6 +237,41 @@
       font-weight: 760;
     }
 
+    .admin-edit-form {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: #fbfcf8;
+      margin-bottom: 14px;
+    }
+
+    .admin-edit-form label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .admin-edit-form textarea {
+      width: 100%;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font: inherit;
+      line-height: 1.4;
+      color: var(--text);
+      background: #fff;
+    }
+
+    .admin-edit-form textarea:focus,
+    .admin-edit-form input:focus {
+      outline: 2px solid rgba(47, 97, 68, 0.18);
+      border-color: #7aa486;
+    }
+
     .status-line {
       grid-column: 1 / -1;
       color: var(--muted);

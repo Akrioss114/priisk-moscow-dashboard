@@ -8,6 +8,7 @@ let activeCardId = null;
 let suppressClick = false;
 let archiveMode = false;
 let pollTimer = null;
+let editModeCardId = null;
 
 const API = '/.netlify/functions';
 const PARTICIPANT_KEY = 'moscow-dashboard-participant-v1';
@@ -60,7 +61,7 @@ function baseColumn(card) {
 function emptyBoardState() {
   const order = {};
   for (const col of columnIds()) order[col] = [];
-  return { version: 0, positions: {}, order, archived: [], updatedAt: '' };
+  return { version: 0, positions: {}, order, archived: [], edits: {}, updatedAt: '' };
 }
 
 function normalizedBoardState() {
@@ -70,6 +71,7 @@ function normalizedBoardState() {
   state.updatedAt = serverBoard.updatedAt || '';
   state.positions = serverBoard.positions && typeof serverBoard.positions === 'object' ? serverBoard.positions : {};
   state.archived = Array.isArray(serverBoard.archived) ? serverBoard.archived : [];
+  state.edits = serverBoard.edits && typeof serverBoard.edits === 'object' ? serverBoard.edits : {};
 
   for (const col of columnIds()) {
     const serverOrder = serverBoard.order && Array.isArray(serverBoard.order[col]) ? serverBoard.order[col] : [];
@@ -91,6 +93,14 @@ function cloneCard(card, state) {
   }
   cloned.moscow = state.positions[card.id] || baseColumn(card);
   cloned.archived = state.archived.indexOf(card.id) >= 0;
+  const edit = state.edits && state.edits[card.id] ? state.edits[card.id] : null;
+  if (edit && typeof edit === 'object') {
+    if (typeof edit.title === 'string' && edit.title.trim()) cloned.title = edit.title;
+    if (typeof edit.summary === 'string' && edit.summary.trim()) cloned.summary = edit.summary;
+    if (Array.isArray(edit.details)) cloned.details = edit.details;
+    if (typeof edit.sourceExcerpt === 'string') cloned.sourceExcerpt = edit.sourceExcerpt;
+    cloned.editedAt = edit.updatedAt || '';
+  }
   return cloned;
 }
 
@@ -258,6 +268,7 @@ function filterCard(card) {
     card.sourceType,
     card.summary,
     card.details.join(' '),
+    card.sourceExcerpt,
     card.tags.join(' '),
     card.backlogMatches.map(match => match.title + ' ' + match.effect).join(' ')
   ].join(' ').toLowerCase();
@@ -420,7 +431,7 @@ function renderVotePanel() {
     panel.innerHTML = 'Нет активного голосования';
     return;
   }
-  const card = cardById.get(activeVote.cardId);
+  const card = currentCards().find(item => item.id === activeVote.cardId) || cardById.get(activeVote.cardId);
   panel.className = 'vote-panel';
   panel.innerHTML = `
     <div class="vote-title">${card ? escapeHtml(card.requirementId + ' · ' + card.title) : escapeHtml(activeVote.cardId)}</div>
@@ -467,5 +478,8 @@ function renderAll() {
   renderAuthState();
   renderVotePanel();
   renderBoard();
-  if (activeCardId && byId('detailDialog').open) openDetail(activeCardId, true);
+  if (activeCardId && byId('detailDialog').open) {
+    const editForm = byId('adminEditForm');
+    if (!(editForm && editForm.dataset.dirty === 'true')) openDetail(activeCardId, true);
+  }
 }

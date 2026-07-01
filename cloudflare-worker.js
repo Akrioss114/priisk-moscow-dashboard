@@ -49,6 +49,7 @@ function normalizeBoardState(value) {
     positions: state.positions && typeof state.positions === "object" ? state.positions : {},
     order: normalizedOrder,
     archived: Array.isArray(state.archived) ? state.archived.filter(Boolean) : [],
+    edits: state.edits && typeof state.edits === "object" ? state.edits : {},
     updatedAt: state.updatedAt || nowIso(),
   };
 }
@@ -97,6 +98,31 @@ async function restoreCard(env, cardId) {
   assertCardId(cardId);
   const state = await getBoardState(env);
   state.archived = state.archived.filter((id) => id !== cardId);
+  return saveBoardState(env, state);
+}
+
+function normalizeCardEdit(input) {
+  const title = String(input.title || "").trim().slice(0, 240);
+  const summary = String(input.summary || "").trim().slice(0, 2000);
+  const sourceExcerpt = String(input.sourceExcerpt || "").trim().slice(0, 4000);
+  const details = Array.isArray(input.details)
+    ? input.details.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30)
+    : String(input.details || "")
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 30);
+  if (!title) throw httpError("Title is required", 400);
+  if (!summary) throw httpError("Task text is required", 400);
+  return { title, summary, details, sourceExcerpt, updatedAt: nowIso() };
+}
+
+async function editCard(env, input) {
+  assertCardId(input.cardId);
+  const edit = normalizeCardEdit(input);
+  const state = await getBoardState(env);
+  state.edits = state.edits && typeof state.edits === "object" ? state.edits : {};
+  state.edits[input.cardId] = edit;
   return saveBoardState(env, state);
 }
 
@@ -311,6 +337,10 @@ async function handleApi(request, env, name) {
   }
   if (name === "admin-restore") {
     await restoreCard(env, input.cardId);
+    return json(await statePayload(env));
+  }
+  if (name === "admin-edit") {
+    await editCard(env, input);
     return json(await statePayload(env));
   }
   if (name === "admin-vote-start") {

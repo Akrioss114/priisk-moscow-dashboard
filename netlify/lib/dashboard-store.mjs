@@ -76,11 +76,13 @@ function normalizeBoardState(value) {
   for (const column of VALID_COLUMNS) {
     normalizedOrder[column] = Array.isArray(order[column]) ? order[column].filter(Boolean) : [];
   }
+  const edits = state.edits && typeof state.edits === "object" ? state.edits : {};
   return {
     version: Number.isFinite(state.version) ? state.version : 1,
     positions: state.positions && typeof state.positions === "object" ? state.positions : {},
     order: normalizedOrder,
     archived: Array.isArray(state.archived) ? state.archived.filter(Boolean) : [],
+    edits,
     updatedAt: state.updatedAt || nowIso(),
   };
 }
@@ -121,6 +123,31 @@ export async function restoreCard(cardId) {
   assertCardId(cardId);
   const state = await getBoardState();
   state.archived = state.archived.filter((id) => id !== cardId);
+  return saveBoardState(state);
+}
+
+function normalizeCardEdit(input) {
+  const title = String(input.title || "").trim().slice(0, 240);
+  const summary = String(input.summary || "").trim().slice(0, 2000);
+  const sourceExcerpt = String(input.sourceExcerpt || "").trim().slice(0, 4000);
+  const details = Array.isArray(input.details)
+    ? input.details.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30)
+    : String(input.details || "")
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 30);
+  if (!title) throw Object.assign(new Error("Title is required"), { status: 400 });
+  if (!summary) throw Object.assign(new Error("Task text is required"), { status: 400 });
+  return { title, summary, details, sourceExcerpt, updatedAt: nowIso() };
+}
+
+export async function editCard(input) {
+  assertCardId(input.cardId);
+  const edit = normalizeCardEdit(input);
+  const state = await getBoardState();
+  state.edits = state.edits && typeof state.edits === "object" ? state.edits : {};
+  state.edits[input.cardId] = edit;
   return saveBoardState(state);
 }
 

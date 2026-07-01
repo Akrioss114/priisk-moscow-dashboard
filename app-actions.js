@@ -54,6 +54,30 @@ async function adminRestore(cardId) {
   }
 }
 
+async function adminSaveEdit(cardId) {
+  const form = byId('adminEditForm');
+  if (!form) return;
+  try {
+    remoteState = await api('admin-edit', {
+      method: 'POST',
+      body: {
+        cardId,
+        title: byId('editTitle').value,
+        summary: byId('editSummary').value,
+        details: byId('editDetails').value,
+        sourceExcerpt: byId('editSourceExcerpt').value,
+      },
+      timeoutMs: 9000,
+    });
+    form.dataset.dirty = 'false';
+    editModeCardId = null;
+    setStatus('Правки задачи сохранены.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось сохранить правки: ' + error.message, 'error');
+  }
+}
+
 async function adminStartVote(cardId) {
   try {
     remoteState = await api('admin-vote-start', { method: 'POST', body: { cardId } });
@@ -103,7 +127,10 @@ function detailActions(card) {
     const archiveButton = card.archived
       ? '<button id="modalRestore">Вернуть из архива</button>'
       : '<button id="modalArchive" class="danger">В архив</button>';
-    return `<div class="move-buttons">${moveButtons}</div><div class="modal-admin-actions">${voteButtons}${archiveButton}</div>`;
+    const editButton = editModeCardId === card.id
+      ? '<button id="modalCancelEdit">Отменить правку</button>'
+      : '<button id="modalEdit">Редактировать</button>';
+    return `<div class="move-buttons">${moveButtons}</div><div class="modal-admin-actions">${editButton}${voteButtons}${archiveButton}</div>`;
   }
   if (activeVote && activeVote.cardId === card.id) {
     return `<div class="move-buttons vote-buttons">${voteButtonsHtml(activeVote)}</div>`;
@@ -128,6 +155,52 @@ function bindDetailActions(card) {
   if (archive) archive.addEventListener('click', () => adminArchive(card.id));
   const restore = byId('modalRestore');
   if (restore) restore.addEventListener('click', () => adminRestore(card.id));
+  const edit = byId('modalEdit');
+  if (edit) edit.addEventListener('click', () => {
+    editModeCardId = card.id;
+    openDetail(card.id, true);
+  });
+  const cancelEdit = byId('modalCancelEdit');
+  if (cancelEdit) cancelEdit.addEventListener('click', () => {
+    editModeCardId = null;
+    openDetail(card.id, true);
+  });
+  const saveEdit = byId('saveCardEdit');
+  if (saveEdit) saveEdit.addEventListener('click', () => adminSaveEdit(card.id));
+  const editForm = byId('adminEditForm');
+  if (editForm) {
+    for (const field of editForm.querySelectorAll('input, textarea')) {
+      field.addEventListener('input', () => { editForm.dataset.dirty = 'true'; });
+    }
+  }
+}
+
+function adminEditHtml(card) {
+  if (!isAdmin() || editModeCardId !== card.id) return '';
+  return `
+    <section class="admin-edit-form" id="adminEditForm" data-dirty="false">
+      <div class="section-title">Редактирование задачи</div>
+      <label>
+        <span>Название</span>
+        <input id="editTitle" class="field" type="text" maxlength="240" value="${escapeHtml(card.title)}">
+      </label>
+      <label>
+        <span>Краткий текст</span>
+        <textarea id="editSummary" rows="4">${escapeHtml(card.summary)}</textarea>
+      </label>
+      <label>
+        <span>Основные моменты</span>
+        <textarea id="editDetails" rows="7">${escapeHtml((card.details || []).join('\n'))}</textarea>
+      </label>
+      <label>
+        <span>Фрагмент источника</span>
+        <textarea id="editSourceExcerpt" rows="5">${escapeHtml(card.sourceExcerpt || '')}</textarea>
+      </label>
+      <div class="modal-admin-actions">
+        <button id="saveCardEdit" class="primary">Сохранить правки</button>
+      </div>
+    </section>
+  `;
 }
 
 function openDetail(id, keepOpen = false) {
@@ -140,7 +213,6 @@ function openDetail(id, keepOpen = false) {
   `;
   byId('modalTitle').textContent = card.title;
   byId('modalMoves').innerHTML = detailActions(card);
-  bindDetailActions(card);
 
   const backlogHtml = card.backlogMatches.length
     ? `<table class="backlog-table">
@@ -160,6 +232,7 @@ function openDetail(id, keepOpen = false) {
     : '<div class="subtle">Связь с задачами беклога не зафиксирована.</div>';
 
   byId('modalBody').innerHTML = `
+    ${adminEditHtml(card)}
     <div class="detail-grid">
       <section>
         <div class="section-title">Основные моменты</div>
@@ -172,6 +245,7 @@ function openDetail(id, keepOpen = false) {
         <div class="section-title">Атрибуты</div>
         <div class="kv"><span>MoSCoW</span><strong>${escapeHtml(card.moscow.toUpperCase())}</strong></div>
         <div class="kv"><span>Статус</span><div>${card.archived ? 'Архив' : 'Активна'}</div></div>
+        <div class="kv"><span>Правки</span><div>${card.editedAt ? 'Сохранены админом' : 'Нет'}</div></div>
         <div class="kv"><span>Причина</span><div>${escapeHtml(card.moscowReason)}</div></div>
         <div class="kv"><span>Источник</span><div>${escapeHtml(card.sourceFiles.join(', '))}</div></div>
         <div class="kv"><span>Теги</span><div>${escapeHtml(card.tags.join(', '))}</div></div>
@@ -186,6 +260,7 @@ function openDetail(id, keepOpen = false) {
       <p>${escapeHtml(card.sourceExcerpt)}</p>
     </section>
   `;
+  bindDetailActions(card);
   const dialog = byId('detailDialog');
   if (!keepOpen && !dialog.open) dialog.showModal();
 }
