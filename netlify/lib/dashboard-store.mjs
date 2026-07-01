@@ -12,6 +12,9 @@ export const DONE_COLUMN = {
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-headers": "content-type,authorization",
 };
 
 function boardStore() {
@@ -50,6 +53,10 @@ export async function readJson(request) {
 
 export function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+}
+
+export function options() {
+  return new Response(null, { status: 204, headers: JSON_HEADERS });
 }
 
 export function fail(error) {

@@ -10,7 +10,8 @@ let archiveMode = false;
 let pollTimer = null;
 let editModeCardId = null;
 
-const API = '/.netlify/functions';
+const NETLIFY_API = 'https://priisk-moscow-dashboard-719.netlify.app/.netlify/functions';
+const API = location.hostname.endsWith('vercel.app') ? NETLIFY_API : '/.netlify/functions';
 const PARTICIPANT_KEY = 'moscow-dashboard-participant-v1';
 const ADMIN_KEY = 'moscow-dashboard-admin-token-v1';
 const LOCAL_VOTES_KEY = 'moscow-dashboard-local-votes-v1';
