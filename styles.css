@@ -30,7 +30,7 @@
       overflow-x: hidden;
     }
 
-    button, input, select {
+    button, input, select, textarea {
       font: inherit;
     }
 
@@ -51,9 +51,15 @@
 
     button:focus-visible,
     input:focus-visible,
-    select:focus-visible {
+    select:focus-visible,
+    textarea:focus-visible {
       outline: 2px solid var(--focus);
       outline-offset: 2px;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
     }
 
     .app {
@@ -639,6 +645,47 @@
       max-width: 640px;
     }
 
+    .create-card-modal {
+      max-width: 720px;
+      margin: 0;
+    }
+
+    .create-card-form {
+      gap: 12px;
+    }
+
+    .create-card-form label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .create-card-form textarea {
+      width: 100%;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 9px 10px;
+      line-height: 1.4;
+    }
+
+    .form-row.two-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr);
+      gap: 10px;
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 4px;
+    }
+
     .settings-section {
       display: grid;
       gap: 9px;
@@ -740,7 +787,8 @@
       }
 
       .side,
-      .detail-grid {
+      .detail-grid,
+      .form-row.two-columns {
         grid-template-columns: 1fr;
       }
     }

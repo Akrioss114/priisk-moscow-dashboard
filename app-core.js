@@ -9,13 +9,13 @@ let suppressClick = false;
 let archiveMode = false;
 let pollTimer = null;
 let editModeCardId = null;
+let stateSyncPromise = null;
 
-const NETLIFY_API = 'https://priisk-moscow-dashboard-719.netlify.app/.netlify/functions';
-const API = location.hostname.endsWith('vercel.app') ? NETLIFY_API : '/.netlify/functions';
+const API = location.hostname.endsWith('vercel.app') ? '/api' : '/.netlify/functions';
 const PARTICIPANT_KEY = 'moscow-dashboard-participant-v1';
 const ADMIN_KEY = 'moscow-dashboard-admin-token-v1';
 const LOCAL_VOTES_KEY = 'moscow-dashboard-local-votes-v1';
-const API_TIMEOUT_MS = 4500;
+const API_TIMEOUT_MS = 10000;
 const DONE_COLUMN = {
   id: 'done',
   letter: 'D',
@@ -62,7 +62,25 @@ function baseColumn(card) {
 function emptyBoardState() {
   const order = {};
   for (const col of columnIds()) order[col] = [];
-  return { version: 0, positions: {}, order, archived: [], edits: {}, updatedAt: '' };
+  return { version: 0, positions: {}, order, archived: [], edits: {}, createdCards: [], updatedAt: '' };
+}
+
+function sourceCards() {
+  const created = remoteState && remoteState.board && Array.isArray(remoteState.board.createdCards)
+    ? remoteState.board.createdCards
+    : [];
+  const cards = [];
+  const seen = new Set();
+  for (const card of data.cards.concat(created)) {
+    if (!card || !card.id || seen.has(card.id)) continue;
+    seen.add(card.id);
+    cards.push(card);
+  }
+  return cards;
+}
+
+function syncCardCatalog() {
+  cardById = new Map(sourceCards().map(card => [card.id, card]));
 }
 
 function normalizedBoardState() {
@@ -73,13 +91,15 @@ function normalizedBoardState() {
   state.positions = serverBoard.positions && typeof serverBoard.positions === 'object' ? serverBoard.positions : {};
   state.archived = Array.isArray(serverBoard.archived) ? serverBoard.archived : [];
   state.edits = serverBoard.edits && typeof serverBoard.edits === 'object' ? serverBoard.edits : {};
+  state.createdCards = Array.isArray(serverBoard.createdCards) ? serverBoard.createdCards : [];
+  const knownIds = new Set(sourceCards().map(card => card.id));
 
   for (const col of columnIds()) {
     const serverOrder = serverBoard.order && Array.isArray(serverBoard.order[col]) ? serverBoard.order[col] : [];
-    state.order[col] = serverOrder.filter(id => cardById.has(id));
+    state.order[col] = serverOrder.filter(id => knownIds.has(id));
   }
 
-  for (const card of data.cards) {
+  for (const card of sourceCards()) {
     const col = state.positions[card.id] || baseColumn(card);
     state.positions[card.id] = col;
     if (state.order[col] && state.order[col].indexOf(card.id) < 0) state.order[col].push(card.id);
@@ -107,7 +127,7 @@ function cloneCard(card, state) {
 
 function currentCards() {
   const state = normalizedBoardState();
-  return data.cards.map(card => cloneCard(card, state));
+  return sourceCards().map(card => cloneCard(card, state));
 }
 
 function visibleCards() {
@@ -187,20 +207,27 @@ async function api(path, options = {}) {
 }
 
 async function loadRemoteState(silent = false) {
-  try {
-    remoteState = await api('state');
-    if (!silent) setStatus('Общая доска синхронизирована.', 'ok');
-    renderAll();
-  } catch (error) {
-    if (!remoteState) remoteState = { board: emptyBoardState(), activeVote: null, voteSummary: null };
-    if (!silent) setStatus('Карточки загружены. Синхронизация временно недоступна: ' + error.message + '.', 'warn');
-    renderAll();
-  }
+  if (stateSyncPromise) return silent ? undefined : stateSyncPromise;
+  stateSyncPromise = (async () => {
+    try {
+      remoteState = await api('state');
+      syncCardCatalog();
+      if (!silent) setStatus('Общая доска синхронизирована.', 'ok');
+      renderAll();
+    } catch (error) {
+      if (!remoteState) remoteState = { board: emptyBoardState(), activeVote: null, voteSummary: null };
+      if (!silent) setStatus('Карточки загружены. Синхронизация временно недоступна: ' + error.message + '.', 'warn');
+      renderAll();
+    } finally {
+      stateSyncPromise = null;
+    }
+  })();
+  return stateSyncPromise;
 }
 
 function startPolling() {
   if (pollTimer) window.clearInterval(pollTimer);
-  pollTimer = window.setInterval(() => loadRemoteState(true), 3500);
+  pollTimer = window.setInterval(() => loadRemoteState(true), 6000);
 }
 
 function renderStats(cards) {
@@ -241,9 +268,9 @@ function renderSources() {
   const sourceList = data.sourceFiles.map(src => `<div><strong>${escapeHtml(src.project)}:</strong> ${escapeHtml(src.file)}</div>`).join('');
   byId('sources').innerHTML = `
     ${sourceList}
-    <div><strong>MoSCoW:</strong> M/S/C/W/D используются как общая доска. Переносы, архив и голосования синхронизируются через Netlify Functions.</div>
+    <div><strong>MoSCoW:</strong> M/S/C/W/D используются как общая доска. Переносы, новые задачи, архив и голосования синхронизируются через сервер.</div>
     <div><strong>Беклог:</strong> пересечения отмечены на карточках, задачи без явного дубля добавлены как отдельные карточки.</div>
-    <div><strong>Доступ без VPN:</strong> адрес остаётся на Netlify. Если сеть блокирует сам Netlify или домен netlify.app, потребуется отдельный домен или зеркало.</div>
+    <div><strong>Доступ:</strong> интерфейс и запросы синхронизации работают через единый адрес Vercel.</div>
   `;
   byId('generatedAt').textContent = data.generatedAt;
 }
@@ -462,8 +489,8 @@ function renderAuthState() {
   const adminStatus = byId('adminStatus');
   if (adminStatus) {
     adminStatus.textContent = isAdmin()
-      ? 'Админский режим включён. Можно двигать, архивировать задачи и управлять голосованием.'
-      : 'Админ может двигать, архивировать задачи и управлять голосованием.';
+      ? 'Админский режим включён. Можно создавать, редактировать, двигать и архивировать задачи.'
+      : 'Админ может создавать, редактировать, двигать и архивировать задачи.';
   }
   byId('adminLogin').hidden = isAdmin();
   byId('adminPin').hidden = isAdmin();
@@ -476,6 +503,8 @@ function renderAuthState() {
 
 function renderAll() {
   if (!data) return;
+  syncCardCatalog();
+  if (typeof refreshProjectOptions === 'function') refreshProjectOptions();
   renderAuthState();
   renderVotePanel();
   renderBoard();

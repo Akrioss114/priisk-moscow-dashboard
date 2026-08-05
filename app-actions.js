@@ -78,6 +78,37 @@ async function adminSaveEdit(cardId) {
   }
 }
 
+async function adminCreateCard(event) {
+  event.preventDefault();
+  const submit = byId('submitCreateCard');
+  submit.disabled = true;
+  submit.textContent = 'Создание...';
+  try {
+    remoteState = await api('admin-create', {
+      method: 'POST',
+      body: {
+        project: byId('createProject').value,
+        column: byId('createColumn').value,
+        title: byId('createTitle').value,
+        summary: byId('createSummary').value,
+        details: byId('createDetails').value,
+        sourceExcerpt: byId('createSourceExcerpt').value,
+      },
+      timeoutMs: 12000,
+    });
+    syncCardCatalog();
+    byId('createCardDialog').close();
+    byId('createCardForm').reset();
+    setStatus('Новая задача создана и добавлена на доску.', 'ok');
+    renderAll();
+  } catch (error) {
+    setStatus('Не удалось создать задачу: ' + error.message, 'error');
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Создать задачу';
+  }
+}
+
 async function adminStartVote(cardId) {
   try {
     remoteState = await api('admin-vote-start', { method: 'POST', body: { cardId } });

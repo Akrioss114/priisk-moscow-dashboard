@@ -3,6 +3,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://priisk-moscow-dashboard-719.netlify.app/.netlify/functions/:path*"
+    },
+    {
       "source": "/.netlify/functions/:path*",
       "destination": "https://priisk-moscow-dashboard-719.netlify.app/.netlify/functions/:path*"
     }

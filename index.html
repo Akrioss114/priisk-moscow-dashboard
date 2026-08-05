@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MoSCoW-доска приоритизации требований</title>
-  <link rel="stylesheet" href="styles.css?v=20260701-admin-edit1">
+  <link rel="stylesheet" href="styles.css?v=20260805-create-card1">
 </head>
 <body>
   <div class="app">
@@ -34,6 +34,7 @@
         <option value="backlogOnly">Только задачи беклога</option>
       </select>
       <div class="actions">
+        <button id="newCardBtn" class="primary admin-only" hidden title="Создать новую задачу">+ Новая задача</button>
         <button id="archiveToggle" class="admin-only" hidden>Архив</button>
         <button id="clearFilters">Очистить фильтры</button>
       </div>
@@ -118,8 +119,55 @@
     </div>
   </dialog>
 
-  <script src="app-core.js?v=20260701-vercel-cors1"></script>
-  <script src="app-actions.js?v=20260701-admin-edit1"></script>
-  <script src="app.js?v=20260630-cloudflare-chunks1"></script>
+  <dialog id="createCardDialog">
+    <form class="modal create-card-modal" id="createCardForm">
+      <div class="modal-head">
+        <div class="modal-title-row">
+          <div>
+            <div class="card-meta">Админ</div>
+            <h2>Новая задача</h2>
+          </div>
+          <button id="closeCreateCard" type="button" aria-label="Закрыть создание задачи">Закрыть</button>
+        </div>
+      </div>
+      <div class="modal-body create-card-form">
+        <div class="form-row two-columns">
+          <label>
+            <span>Проект</span>
+            <input id="createProject" class="field" type="text" list="projectSuggestions" maxlength="120" required placeholder="Выберите или введите проект">
+            <datalist id="projectSuggestions"></datalist>
+          </label>
+          <label>
+            <span>Статус</span>
+            <select id="createColumn" class="field" required></select>
+          </label>
+        </div>
+        <label>
+          <span>Название</span>
+          <input id="createTitle" class="field" type="text" maxlength="240" required placeholder="Короткое название задачи">
+        </label>
+        <label>
+          <span>Описание</span>
+          <textarea id="createSummary" rows="4" maxlength="2000" required placeholder="Что необходимо реализовать"></textarea>
+        </label>
+        <label>
+          <span>Основные моменты</span>
+          <textarea id="createDetails" rows="6" placeholder="Каждый пункт с новой строки"></textarea>
+        </label>
+        <label>
+          <span>Дополнительный контекст</span>
+          <textarea id="createSourceExcerpt" rows="4" maxlength="4000" placeholder="Ссылка, цитата или пояснение"></textarea>
+        </label>
+        <div class="form-actions">
+          <button id="cancelCreateCard" type="button">Отмена</button>
+          <button id="submitCreateCard" class="primary" type="submit">Создать задачу</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app-core.js?v=20260805-api-proxy1"></script>
+  <script src="app-actions.js?v=20260805-create-card1"></script>
+  <script src="app.js?v=20260805-create-card1"></script>
 </body>
 </html>

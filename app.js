@@ -52,10 +52,18 @@ function exportJson() {
   download('moscow-prioritization.json', 'application/json;charset=utf-8', JSON.stringify(payload, null, 2));
 }
 
-function setupFilters() {
+function refreshProjectOptions() {
   const select = byId('projectFilter');
-  const projects = [...new Set(data.cards.map(card => card.project))].sort((a, b) => a.localeCompare(b, 'ru'));
+  const current = select.value || 'all';
+  const projects = [...new Set(sourceCards().map(card => card.project).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
   select.innerHTML = '<option value="all">Все проекты</option>' + projects.map(project => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`).join('');
+  select.value = projects.indexOf(current) >= 0 ? current : 'all';
+  const suggestions = byId('projectSuggestions');
+  if (suggestions) suggestions.innerHTML = projects.map(project => `<option value="${escapeHtml(project)}"></option>`).join('');
+}
+
+function setupFilters() {
+  refreshProjectOptions();
   for (const id of ['search', 'projectFilter', 'backlogFilter']) {
     byId(id).addEventListener('input', renderAll);
     byId(id).addEventListener('change', renderAll);
@@ -80,6 +88,16 @@ function showLoadError(message) {
       Попробуйте обновить страницу с очисткой кэша: Ctrl+F5. Если вы без VPN, проблема может быть в частичной блокировке файлов данных.
     </div>
   `;
+}
+
+function openCreateCard() {
+  refreshProjectOptions();
+  const column = byId('createColumn');
+  column.innerHTML = data.columns.map(col => `<option value="${escapeHtml(col.id)}">${escapeHtml(col.letter + ' · ' + col.title)}</option>`).join('');
+  column.value = 'must';
+  const dialog = byId('createCardDialog');
+  dialog.showModal();
+  byId('createTitle').focus();
 }
 
 function showLoadProgress(message) {
@@ -290,6 +308,7 @@ function logoutAdmin(render = true) {
 }
 
 byId('refreshBtn').addEventListener('click', () => loadRemoteState());
+byId('newCardBtn').addEventListener('click', openCreateCard);
 byId('settingsBtn').addEventListener('click', () => byId('settingsDialog').showModal());
 byId('closeSettings').addEventListener('click', () => byId('settingsDialog').close());
 byId('jsonBtn').addEventListener('click', exportJson);
@@ -312,5 +331,8 @@ byId('adminPin').addEventListener('keydown', event => {
 byId('adminLogout').addEventListener('click', () => logoutAdmin());
 byId('closeDialog').addEventListener('click', () => byId('detailDialog').close());
 byId('detailDialog').addEventListener('close', () => { activeCardId = null; });
+byId('createCardForm').addEventListener('submit', adminCreateCard);
+byId('closeCreateCard').addEventListener('click', () => byId('createCardDialog').close());
+byId('cancelCreateCard').addEventListener('click', () => byId('createCardDialog').close());
 
 loadDashboardData();

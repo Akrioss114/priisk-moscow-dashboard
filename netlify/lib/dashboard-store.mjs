@@ -84,12 +84,16 @@ function normalizeBoardState(value) {
     normalizedOrder[column] = Array.isArray(order[column]) ? order[column].filter(Boolean) : [];
   }
   const edits = state.edits && typeof state.edits === "object" ? state.edits : {};
+  const createdCards = Array.isArray(state.createdCards)
+    ? state.createdCards.filter((card) => card && typeof card === "object" && card.id)
+    : [];
   return {
     version: Number.isFinite(state.version) ? state.version : 1,
     positions: state.positions && typeof state.positions === "object" ? state.positions : {},
     order: normalizedOrder,
     archived: Array.isArray(state.archived) ? state.archived.filter(Boolean) : [],
     edits,
+    createdCards,
     updatedAt: state.updatedAt || nowIso(),
   };
 }
@@ -156,6 +160,57 @@ export async function editCard(input) {
   state.edits = state.edits && typeof state.edits === "object" ? state.edits : {};
   state.edits[input.cardId] = edit;
   return saveBoardState(state);
+}
+
+function normalizeCreatedCard(input) {
+  const title = String(input.title || "").trim().slice(0, 240);
+  const project = String(input.project || "").trim().slice(0, 120);
+  const summary = String(input.summary || "").trim().slice(0, 2000);
+  const sourceExcerpt = String(input.sourceExcerpt || "").trim().slice(0, 4000);
+  const details = Array.isArray(input.details)
+    ? input.details.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30)
+    : String(input.details || "")
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 30);
+  const column = String(input.column || "must").trim().toLowerCase();
+  if (!title) throw Object.assign(new Error("Title is required"), { status: 400 });
+  if (!project) throw Object.assign(new Error("Project is required"), { status: 400 });
+  if (!summary) throw Object.assign(new Error("Task text is required"), { status: 400 });
+  assertColumn(column);
+  return { title, project, summary, sourceExcerpt, details, column };
+}
+
+export async function createCard(input) {
+  const normalized = normalizeCreatedCard(input);
+  const state = await getBoardState();
+  const id = randomId("CUSTOM");
+  const createdAt = nowIso();
+  const card = {
+    id,
+    requirementId: id,
+    title: normalized.title,
+    project: normalized.project,
+    sourceType: "Добавлено на доске",
+    sourceFiles: ["MoSCoW-дашборд"],
+    summary: normalized.summary,
+    details: normalized.details,
+    sourceExcerpt: normalized.sourceExcerpt,
+    tags: ["создано вручную"],
+    suggestedMoscow: normalized.column,
+    moscow: normalized.column,
+    moscowReason: "Добавлено администратором непосредственно на доске.",
+    backlogMatches: [],
+    relatedSources: [],
+    createdAt,
+  };
+  state.createdCards = Array.isArray(state.createdCards) ? state.createdCards : [];
+  state.createdCards.push(card);
+  state.positions[id] = normalized.column;
+  state.order[normalized.column].push(id);
+  const board = await saveBoardState(state);
+  return { board, card };
 }
 
 function normalizeVote(value) {
