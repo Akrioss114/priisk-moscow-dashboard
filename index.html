@@ -3,46 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MoSCoW-доска приоритизации требований</title>
-  <link rel="stylesheet" href="styles.css?v=20260805-create-card1">
+  <title>AI PMO · MoSCoW-доска</title>
+  <link rel="stylesheet" href="styles.css?v=20260805-ux-jira1">
 </head>
 <body>
   <div class="app">
     <header class="topbar">
       <div class="title-row">
-        <div>
-          <h1>MoSCoW-доска приоритизации требований</h1>
-          <div class="subtle">Сводная доска по документам требований и файлу беклога. Дата сборки: <span id="generatedAt"></span>.</div>
+        <div class="brand-block">
+          <div class="product-name">AI PMO</div>
+          <h1>Приоритизация требований</h1>
         </div>
-        <div class="actions">
-          <button id="refreshBtn" title="Обновить состояние доски">Обновить</button>
-          <button id="settingsBtn" title="Настройки">Настройки</button>
-          <button id="jsonBtn" title="Скачать текущие решения в JSON">JSON</button>
-          <button id="csvBtn" class="primary" title="Скачать текущие решения в CSV">CSV</button>
+        <div class="top-actions">
+          <div id="connectionBadge" class="connection-badge pending">Подключение</div>
+          <button id="refreshBtn" class="icon-action" title="Обновить состояние доски" aria-label="Обновить">↻</button>
+          <button id="settingsBtn" title="Настройки доступа">Настройки</button>
         </div>
       </div>
       <div class="stats" id="stats"></div>
     </header>
 
-    <section class="toolbar" aria-label="Фильтры">
-      <input id="search" class="field" type="search" placeholder="Поиск по требованиям, деталям, беклогу">
-      <select id="projectFilter" class="field"></select>
-      <select id="backlogFilter" class="field">
-        <option value="all">Все карточки</option>
-        <option value="with">Есть в беклоге</option>
-        <option value="without">Без связи с беклогом</option>
-        <option value="backlogOnly">Только задачи беклога</option>
-      </select>
-      <div class="actions">
-        <button id="newCardBtn" class="primary admin-only" hidden title="Создать новую задачу">+ Новая задача</button>
+    <section class="workspace-bar" aria-label="Управление доской">
+      <div class="workspace-actions">
+        <button id="newCardBtn" class="primary" title="Создать новую задачу">Создать задачу</button>
+        <button id="jiraImportBtn" title="Найти и добавить тикет Jira">Импорт Jira</button>
         <button id="archiveToggle" class="admin-only" hidden>Архив</button>
-        <button id="clearFilters">Очистить фильтры</button>
+      </div>
+      <div class="filters">
+        <input id="search" class="field search-field" type="search" placeholder="Поиск по доске">
+        <select id="projectFilter" class="field" aria-label="Проект"></select>
+        <select id="backlogFilter" class="field" aria-label="Связь с беклогом">
+          <option value="all">Любая связь с беклогом</option>
+          <option value="with">Есть в беклоге</option>
+          <option value="without">Без связи с беклогом</option>
+          <option value="backlogOnly">Только задачи беклога</option>
+        </select>
+        <button id="clearFilters">Сбросить</button>
       </div>
     </section>
 
     <section class="control-strip" aria-label="Участники и голосование">
-      <div class="control-block" id="participantBlock">
-        <label for="participantName">Участник</label>
+      <div class="control-block participant-block" id="participantBlock">
+        <label for="participantName">Ваше имя</label>
         <div class="inline-form">
           <input id="participantName" class="field" type="text" maxlength="80" placeholder="Имя для голосования">
           <button id="saveParticipant">Войти</button>
@@ -52,7 +54,7 @@
         <div class="control-label">Голосование</div>
         <div id="votePanel" class="vote-panel muted-panel">Нет активного голосования</div>
       </div>
-      <div id="statusLine" class="status-line">Подключение к общей доске...</div>
+      <div id="statusLine" class="status-line" role="status">Подключение к общей доске...</div>
     </section>
 
     <main class="board-wrap">
@@ -61,16 +63,20 @@
       </section>
     </main>
 
-    <section class="side">
-      <aside class="panel">
-        <h2>Проекты</h2>
-        <div class="bar-list" id="projectBars"></div>
-      </aside>
-      <aside class="panel">
-        <h2>Источники и методика</h2>
-        <div class="sources" id="sources"></div>
-      </aside>
-    </section>
+    <details class="insights">
+      <summary>Сводка по проектам и источникам</summary>
+      <div class="side">
+        <section class="panel">
+          <h2>Проекты</h2>
+          <div class="bar-list" id="projectBars"></div>
+        </section>
+        <section class="panel">
+          <h2>Источники</h2>
+          <div class="sources" id="sources"></div>
+          <span id="generatedAt" hidden></span>
+        </section>
+      </div>
+    </details>
   </div>
 
   <dialog id="detailDialog">
@@ -81,7 +87,7 @@
             <div class="card-meta" id="modalMeta"></div>
             <h2 id="modalTitle"></h2>
           </div>
-          <button id="closeDialog" aria-label="Закрыть">Закрыть</button>
+          <button id="closeDialog" class="icon-action" aria-label="Закрыть">×</button>
         </div>
         <div class="move-buttons" id="modalMoves"></div>
       </div>
@@ -97,7 +103,7 @@
             <div class="card-meta">Настройки доски</div>
             <h2>Настройки</h2>
           </div>
-          <button id="closeSettings" aria-label="Закрыть настройки">Закрыть</button>
+          <button id="closeSettings" class="icon-action" aria-label="Закрыть настройки">×</button>
         </div>
       </div>
       <div class="modal-body">
@@ -115,6 +121,13 @@
           <div class="subtle" id="participantStatus">Имя участника будет запрошено перед первым голосованием.</div>
           <button id="changeParticipant">Сменить имя</button>
         </section>
+        <section class="settings-section">
+          <div class="section-title">Экспорт</div>
+          <div class="inline-form">
+            <button id="csvBtn" type="button">Скачать CSV</button>
+            <button id="jsonBtn" type="button">Скачать JSON</button>
+          </div>
+        </section>
       </div>
     </div>
   </dialog>
@@ -127,7 +140,7 @@
             <div class="card-meta">Админ</div>
             <h2>Новая задача</h2>
           </div>
-          <button id="closeCreateCard" type="button" aria-label="Закрыть создание задачи">Закрыть</button>
+          <button id="closeCreateCard" class="icon-action" type="button" aria-label="Закрыть создание задачи">×</button>
         </div>
       </div>
       <div class="modal-body create-card-form">
@@ -166,8 +179,36 @@
     </form>
   </dialog>
 
-  <script src="app-core.js?v=20260805-api-proxy1"></script>
-  <script src="app-actions.js?v=20260805-create-card1"></script>
-  <script src="app.js?v=20260805-create-card1"></script>
+  <dialog id="jiraDialog">
+    <div class="modal jira-modal">
+      <div class="modal-head">
+        <div class="modal-title-row">
+          <div>
+            <div class="card-meta">Корпоративная Jira</div>
+            <h2>Импорт задачи</h2>
+          </div>
+          <button id="closeJira" class="icon-action" type="button" aria-label="Закрыть импорт Jira">×</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="jira-search-row">
+          <input id="jiraQuery" class="field" type="search" maxlength="180" autocomplete="off" placeholder="Ключ AI-1234 или часть названия">
+          <button id="jiraSearchBtn" class="primary" type="button">Найти</button>
+        </div>
+        <div class="jira-options">
+          <label>
+            <span>Добавить в колонку</span>
+            <select id="jiraColumn" class="field"></select>
+          </label>
+          <div id="jiraSearchStatus" class="inline-status" role="status">Введите номер или название тикета.</div>
+        </div>
+        <div id="jiraResults" class="jira-results"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app-core.js?v=20260805-ux-jira1"></script>
+  <script src="app-actions.js?v=20260805-ux-jira1"></script>
+  <script src="app.js?v=20260805-ux-jira1"></script>
 </body>
 </html>

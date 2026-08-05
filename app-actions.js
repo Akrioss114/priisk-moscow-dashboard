@@ -109,6 +109,108 @@ async function adminCreateCard(event) {
   }
 }
 
+function findJiraDuplicate(issue) {
+  const key = String(issue.key || '').trim().toUpperCase();
+  const title = String(issue.title || '').trim().toLowerCase();
+  return currentCards().find(card => {
+    const requirementId = String(card.requirementId || '').trim().toUpperCase();
+    const cardTitle = String(card.title || '').trim().toLowerCase();
+    const sourceText = [card.sourceExcerpt, ...(card.sourceFiles || [])].join(' ').toUpperCase();
+    return (key && (requirementId === key || sourceText.indexOf('/BROWSE/' + key) >= 0)) || (title && cardTitle === title);
+  }) || null;
+}
+
+function renderJiraResults() {
+  const container = byId('jiraResults');
+  if (!container) return;
+  if (!jiraSearchResults.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = jiraSearchResults.map(issue => {
+    const duplicate = findJiraDuplicate(issue);
+    const action = duplicate
+      ? `<button type="button" disabled title="Карточка ${escapeHtml(duplicate.requirementId)} уже есть на доске">Уже на доске</button>`
+      : `<button class="primary" type="button" data-jira-import="${escapeHtml(issue.key)}">Добавить</button>`;
+    const link = issue.url
+      ? `<a class="jira-link" href="${escapeHtml(issue.url)}" target="_blank" rel="noopener">${escapeHtml(issue.key)}</a>`
+      : `<strong>${escapeHtml(issue.key)}</strong>`;
+    return `
+      <article class="jira-result">
+        <div class="jira-result-main">
+          <div class="jira-result-meta">
+            <span>${link}</span>
+            <span>${escapeHtml(issue.projectName || 'Без проекта')}</span>
+            <span>${escapeHtml(issue.status || 'Статус не указан')}</span>
+            <span>${escapeHtml(issue.issueType || '')}</span>
+          </div>
+          <div class="jira-result-title">${escapeHtml(issue.title)}</div>
+          ${issue.summary ? `<div class="jira-result-summary">${escapeHtml(issue.summary)}</div>` : ''}
+        </div>
+        <div class="jira-result-actions">${action}</div>
+      </article>
+    `;
+  }).join('');
+  for (const button of container.querySelectorAll('[data-jira-import]')) {
+    button.addEventListener('click', () => adminJiraImport(button.dataset.jiraImport, button));
+  }
+}
+
+async function adminJiraSearch() {
+  const query = byId('jiraQuery').value.trim();
+  const status = byId('jiraSearchStatus');
+  if (query.length < 2) {
+    status.className = 'inline-status error';
+    status.textContent = 'Введите не менее двух символов.';
+    return;
+  }
+  const button = byId('jiraSearchBtn');
+  button.disabled = true;
+  button.textContent = 'Поиск...';
+  status.className = 'inline-status';
+  status.textContent = 'Запрашиваем Jira...';
+  jiraSearchResults = [];
+  renderJiraResults();
+  try {
+    const result = await api('admin-jira-search?q=' + encodeURIComponent(query), { timeoutMs: 25000 });
+    jiraSearchResults = Array.isArray(result.issues) ? result.issues : [];
+    status.className = 'inline-status' + (jiraSearchResults.length ? ' ok' : '');
+    status.textContent = jiraSearchResults.length
+      ? 'Найдено: ' + jiraSearchResults.length + '. Выберите задачу для импорта.'
+      : 'Совпадений не найдено.';
+    renderJiraResults();
+  } catch (error) {
+    status.className = 'inline-status error';
+    status.textContent = 'Поиск недоступен: ' + error.message + '.';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Найти';
+  }
+}
+
+async function adminJiraImport(key, button) {
+  button.disabled = true;
+  button.textContent = 'Добавление...';
+  const status = byId('jiraSearchStatus');
+  try {
+    remoteState = await api('admin-jira-import', {
+      method: 'POST',
+      body: { key, column: byId('jiraColumn').value },
+      timeoutMs: 25000,
+    });
+    syncCardCatalog();
+    status.className = 'inline-status ok';
+    status.textContent = key + ' добавлена на доску.';
+    renderAll();
+    renderJiraResults();
+  } catch (error) {
+    status.className = 'inline-status error';
+    status.textContent = 'Не удалось добавить ' + key + ': ' + error.message + '.';
+    button.disabled = false;
+    button.textContent = 'Добавить';
+  }
+}
+
 async function adminStartVote(cardId) {
   try {
     remoteState = await api('admin-vote-start', { method: 'POST', body: { cardId } });

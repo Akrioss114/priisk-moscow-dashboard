@@ -175,35 +175,49 @@ function normalizeCreatedCard(input) {
       .filter(Boolean)
       .slice(0, 30);
   const column = String(input.column || "must").trim().toLowerCase();
+  const requirementId = String(input.requirementId || "").trim().slice(0, 80);
+  const sourceType = String(input.sourceType || "Добавлено на доске").trim().slice(0, 120);
+  const sourceFiles = Array.isArray(input.sourceFiles)
+    ? input.sourceFiles.map((item) => String(item || "").trim().slice(0, 500)).filter(Boolean).slice(0, 10)
+    : ["MoSCoW-дашборд"];
+  const tags = Array.isArray(input.tags)
+    ? input.tags.map((item) => String(item || "").trim().slice(0, 100)).filter(Boolean).slice(0, 20)
+    : ["создано вручную"];
+  const moscowReason = String(input.moscowReason || "Добавлено администратором непосредственно на доске.").trim().slice(0, 1000);
+  const externalKey = String(input.externalKey || "").trim().toUpperCase().slice(0, 80);
   if (!title) throw Object.assign(new Error("Title is required"), { status: 400 });
   if (!project) throw Object.assign(new Error("Project is required"), { status: 400 });
   if (!summary) throw Object.assign(new Error("Task text is required"), { status: 400 });
   assertColumn(column);
-  return { title, project, summary, sourceExcerpt, details, column };
+  return { title, project, summary, sourceExcerpt, details, column, requirementId, sourceType, sourceFiles, tags, moscowReason, externalKey };
 }
 
 export async function createCard(input) {
   const normalized = normalizeCreatedCard(input);
   const state = await getBoardState();
+  if (normalized.externalKey && state.createdCards.some((card) => String(card.externalKey || card.requirementId || "").toUpperCase() === normalized.externalKey)) {
+    throw Object.assign(new Error("Эта задача Jira уже добавлена на доску"), { status: 409 });
+  }
   const id = randomId("CUSTOM");
   const createdAt = nowIso();
   const card = {
     id,
-    requirementId: id,
+    requirementId: normalized.requirementId || id,
     title: normalized.title,
     project: normalized.project,
-    sourceType: "Добавлено на доске",
-    sourceFiles: ["MoSCoW-дашборд"],
+    sourceType: normalized.sourceType,
+    sourceFiles: normalized.sourceFiles,
     summary: normalized.summary,
     details: normalized.details,
     sourceExcerpt: normalized.sourceExcerpt,
-    tags: ["создано вручную"],
+    tags: normalized.tags,
     suggestedMoscow: normalized.column,
     moscow: normalized.column,
-    moscowReason: "Добавлено администратором непосредственно на доске.",
+    moscowReason: normalized.moscowReason,
     backlogMatches: [],
     relatedSources: [],
     createdAt,
+    externalKey: normalized.externalKey,
   };
   state.createdCards = Array.isArray(state.createdCards) ? state.createdCards : [];
   state.createdCards.push(card);

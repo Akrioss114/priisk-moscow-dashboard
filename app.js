@@ -100,6 +100,30 @@ function openCreateCard() {
   byId('createTitle').focus();
 }
 
+function requestAdminAccess(actionName) {
+  if (isAdmin()) return true;
+  const dialog = byId('settingsDialog');
+  if (!dialog.open) dialog.showModal();
+  const status = byId('adminStatus');
+  if (status) status.textContent = actionName + ' доступен после входа администратора.';
+  byId('adminPin').focus();
+  return false;
+}
+
+function openJiraDialog() {
+  if (!requestAdminAccess('Импорт из Jira')) return;
+  const column = byId('jiraColumn');
+  column.innerHTML = data.columns.map(col => `<option value="${escapeHtml(col.id)}">${escapeHtml(col.letter + ' · ' + col.title)}</option>`).join('');
+  column.value = 'must';
+  jiraSearchResults = [];
+  renderJiraResults();
+  byId('jiraSearchStatus').className = 'inline-status';
+  byId('jiraSearchStatus').textContent = 'Введите номер или название тикета.';
+  const dialog = byId('jiraDialog');
+  dialog.showModal();
+  byId('jiraQuery').focus();
+}
+
 function showLoadProgress(message) {
   byId('board').innerHTML = `
     <div class="loading-state">
@@ -308,7 +332,10 @@ function logoutAdmin(render = true) {
 }
 
 byId('refreshBtn').addEventListener('click', () => loadRemoteState());
-byId('newCardBtn').addEventListener('click', openCreateCard);
+byId('newCardBtn').addEventListener('click', () => {
+  if (requestAdminAccess('Создание задач')) openCreateCard();
+});
+byId('jiraImportBtn').addEventListener('click', openJiraDialog);
 byId('settingsBtn').addEventListener('click', () => byId('settingsDialog').showModal());
 byId('closeSettings').addEventListener('click', () => byId('settingsDialog').close());
 byId('jsonBtn').addEventListener('click', exportJson);
@@ -334,5 +361,13 @@ byId('detailDialog').addEventListener('close', () => { activeCardId = null; });
 byId('createCardForm').addEventListener('submit', adminCreateCard);
 byId('closeCreateCard').addEventListener('click', () => byId('createCardDialog').close());
 byId('cancelCreateCard').addEventListener('click', () => byId('createCardDialog').close());
+byId('closeJira').addEventListener('click', () => byId('jiraDialog').close());
+byId('jiraSearchBtn').addEventListener('click', adminJiraSearch);
+byId('jiraQuery').addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    adminJiraSearch();
+  }
+});
 
 loadDashboardData();

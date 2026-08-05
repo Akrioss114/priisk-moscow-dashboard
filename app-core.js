@@ -10,6 +10,7 @@ let archiveMode = false;
 let pollTimer = null;
 let editModeCardId = null;
 let stateSyncPromise = null;
+let jiraSearchResults = [];
 
 const API = location.hostname.endsWith('vercel.app') ? '/api' : '/.netlify/functions';
 const PARTICIPANT_KEY = 'moscow-dashboard-participant-v1';
@@ -171,6 +172,12 @@ function setStatus(message, type) {
   const node = byId('statusLine');
   node.textContent = message;
   node.className = 'status-line' + (type ? ' ' + type : '');
+  const badge = byId('connectionBadge');
+  if (badge) {
+    const badgeType = type === 'ok' ? 'ok' : type === 'error' ? 'error' : type === 'warn' ? 'warn' : 'pending';
+    badge.className = 'connection-badge ' + badgeType;
+    badge.textContent = badgeType === 'ok' ? 'Синхронизировано' : badgeType === 'error' ? 'Ошибка' : badgeType === 'warn' ? 'Офлайн-режим' : 'Подключение';
+  }
 }
 
 async function api(path, options = {}) {
@@ -197,7 +204,8 @@ async function api(path, options = {}) {
   try {
     payload = text ? JSON.parse(text) : null;
   } catch {
-    payload = { error: text };
+    const isHtml = /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text);
+    payload = { error: isHtml ? 'сервер вернул страницу вместо ответа API' : text.slice(0, 300) };
   }
   if (!response.ok) {
     if (response.status === 401 && path !== 'admin-login') logoutAdmin(false);
@@ -239,7 +247,7 @@ function renderStats(cards) {
   const items = [
     ['Карточек', visible.length],
     ['Есть в беклоге', withBacklog],
-    ['Must сейчас', must],
+    ['Must', must],
     ['Done', done],
     ['Архив', archived],
   ];
@@ -497,6 +505,14 @@ function renderAuthState() {
   byId('adminLogout').hidden = !isAdmin();
   byId('archiveToggle').hidden = !isAdmin();
   byId('archiveToggle').classList.toggle('active', archiveMode);
+  for (const id of ['newCardBtn', 'jiraImportBtn']) {
+    const button = byId(id);
+    if (!button) continue;
+    button.classList.toggle('admin-locked', !isAdmin());
+    button.title = isAdmin()
+      ? (id === 'newCardBtn' ? 'Создать новую задачу' : 'Найти и добавить тикет Jira')
+      : 'Доступно после входа администратора в настройках';
+  }
   for (const node of document.querySelectorAll('.admin-only')) node.hidden = !isAdmin();
   document.body.classList.toggle('admin-mode', isAdmin());
 }
